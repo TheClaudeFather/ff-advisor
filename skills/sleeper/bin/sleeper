@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Launcher for the sleeper CLI. Resolves the plugin root from its own location,
+# so it works from any working directory, and through a symlinked skill path.
+set -euo pipefail
+
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [ "${src#/}" = "$src" ] && src="$dir/$src"
+done
+here="$(cd -P "$(dirname "$src")" && pwd)"
+root="$(cd -P "$here/../../.." && pwd)"
+
+PYTHONPATH="$root${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m sleeper.cli "$@"

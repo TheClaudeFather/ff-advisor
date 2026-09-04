@@ -1,0 +1,18 @@
+[project]
+name = "sleeper-advisor"
+version = "1.0.0"
+description = "Fantasy football advice computed in your own Sleeper league's scoring. Read only."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = []
+
+# requests is used when it is present and curl is the fallback, so neither is
+# required. Install this extra if you want to avoid the curl subprocess.
+[project.optional-dependencies]
+http = ["requests", "certifi"]
+
+[project.scripts]
+sleeper = "sleeper.cli:main"
+
+[tool.setuptools]
+packages = ["sleeper", "sleeper.advice"]

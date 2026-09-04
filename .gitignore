@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.DS_Store
+
+# Never commit account configuration or private league notes.
+.env
+.env.local
+notes.md
+
+# Personal working material.
+Research/

@@ -1,0 +1,20 @@
+{
+  "name": "sleeper-advisor",
+  "displayName": "Sleeper Fantasy Advisor",
+  "description": "Fantasy football advice computed in your own Sleeper league's scoring: draft boards, value over replacement, roster-aware draft recommendations, and a live draft panel. Read only, it never writes to Sleeper.",
+  "version": "1.0.0",
+  "author": {
+    "name": "TheClaudeFather",
+    "url": "https://github.com/TheClaudeFather"
+  },
+  "homepage": "https://github.com/TheClaudeFather/ff-advisor",
+  "repository": "https://github.com/TheClaudeFather/ff-advisor",
+  "license": "MIT",
+  "keywords": [
+    "fantasy-football",
+    "sleeper",
+    "draft",
+    "nfl",
+    "sports"
+  ]
+}
