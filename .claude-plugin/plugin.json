@@ -1,5 +1,5 @@
 {
-  "name": "sleeper-advisor",
+  "name": "sleeper-fantasy-football-advisor",
   "displayName": "Sleeper Fantasy Advisor",
   "description": "Fantasy football advice computed in your own Sleeper league's scoring: draft boards, value over replacement, roster-aware draft recommendations, and a live draft panel. Read only, it never writes to Sleeper.",
   "version": "1.0.0",

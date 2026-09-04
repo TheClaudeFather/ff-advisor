@@ -11,7 +11,7 @@ every command produces a recommendation that you execute yourself.
 
 ```
 /plugin marketplace add TheClaudeFather/ff-advisor
-/plugin install sleeper-advisor@sleeper-advisor
+/plugin install sleeper-fantasy-football-advisor@sleeper-fantasy-football-advisor
 ```
 
 Then tell Claude your Sleeper username, or configure it by hand:

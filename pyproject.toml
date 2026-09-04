@@ -1,5 +1,5 @@
 [project]
-name = "sleeper-advisor"
+name = "sleeper-fantasy-football-advisor"
 version = "1.0.0"
 description = "Fantasy football advice computed in your own Sleeper league's scoring. Read only."
 requires-python = ">=3.11"
