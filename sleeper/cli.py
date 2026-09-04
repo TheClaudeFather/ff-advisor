@@ -238,8 +238,8 @@ def cmd_draft(args, cfg):
     print("\nsurv% = crude ADP-based odds he lasts to your next pick. ADP is")
     print("national and a weak prior in a small league. VOR is the real signal.")
     if info.get("superflex"):
-        print("SUPER_FLEX: quarterback ADP is shifted earlier, because Sleeper")
-        print("publishes 1QB ADP and quarterbacks go much earlier here. Still crude.")
+        print("SUPER_FLEX: ADP comes from Sleeper's two-quarterback board, not")
+        print("the one-quarterback one, so quarterbacks price much earlier here.")
 
 
 def cmd_live(args, cfg):

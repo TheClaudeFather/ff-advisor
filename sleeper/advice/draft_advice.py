@@ -37,11 +37,6 @@ INSURANCE_WEIGHT = 0.02
 # recommended when every remaining player is capped.
 CAP_PENALTY = 10_000.0
 
-# Sleeper publishes national one-quarterback ADP. In a SUPER_FLEX league every
-# team wants two quarterbacks, so they go far earlier than that ADP implies and
-# the survival estimate is optimistic to the point of being misleading.
-SUPERFLEX_QB_ADP_SHIFT = 0.55
-
 # Minimum odds a player must have of lasting until a pick for us to treat him
 # as "available then" when estimating what we can still get later.
 SURVIVAL_FLOOR = 0.5
@@ -119,8 +114,6 @@ def advise(lg, state, *, top=8, offline=False):
             a = r["adp"]
             if not a:
                 continue
-            if superflex and r["pos"] == "QB":
-                a *= SUPERFLEX_QB_ADP_SHIFT
             if draft_mod.survival_prob(a, later) >= SURVIVAL_FLOOR:
                 best_left[r["pos"]] = max(best_left.get(r["pos"], 0.0), r["pts"])
         for pos_key, value in best_left.items():
@@ -147,8 +140,6 @@ def advise(lg, state, *, top=8, offline=False):
         mv = lineup_mod.marginal_over_replacement(
             mine_set, r["player_id"], pts_by_id, pos_of, lg, repl)
         adp = r["adp"]
-        if superflex and pos == "QB" and adp:
-            adp *= SUPERFLEX_QB_ADP_SHIFT
         surv = draft_mod.survival_prob(adp, nxt)
         urgency = (1 - surv) * 0.25 * spread if pos in needed_pos else 0.0
 

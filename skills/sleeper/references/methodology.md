@@ -86,9 +86,12 @@ Measured means, higher is better:
 ## Survival percentages
 
 `surv%` is a crude logistic function of national ADP against the user's next
-pick. In a SUPER_FLEX league, quarterback ADP is shifted earlier, because
-Sleeper publishes one-quarterback ADP while quarterbacks go much sooner in that
-format. Treat these numbers as direction, not probability.
+pick. A SUPER_FLEX league reads ADP from Sleeper's `adp_2qb` field instead of
+`adp_ppr`, because quarterbacks go far sooner in that format. An earlier version
+estimated the shift with a multiplier of 0.55. The multiplier was wrong by wide
+margins: it put Josh Allen at pick 11.6 when the two-quarterback market has him
+at 3.5, and it ignored the fact that every other position goes slightly later.
+Treat these numbers as direction, not probability.
 
 ## Verification
 

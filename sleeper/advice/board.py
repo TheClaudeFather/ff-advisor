@@ -11,11 +11,17 @@ def build(lg, *, horizon="season", offline=False):
 
     raw = projections.raw(lg.season, horizon, offline=offline)
     pts, _opp = projections.points(lg, horizon, offline=offline)
+    # Sleeper publishes a separate average draft position for two-quarterback
+    # formats. In a SUPER_FLEX league every team wants two quarterbacks, so
+    # quarterbacks go far earlier than the one-quarterback number implies, and
+    # everyone else goes slightly later. Use the market number for the format
+    # instead of estimating the shift.
+    adp_key = "adp_2qb" if "SUPER_FLEX" in lg.starter_slots else "adp_ppr"
     adp = {}
     for r in raw:
         s = r.get("stats") or {}
-        if s.get("adp_ppr") is not None:
-            adp[r["player_id"]] = s["adp_ppr"]
+        if s.get(adp_key) is not None:
+            adp[r["player_id"]] = s[adp_key]
 
     repl, notes = valuation.replacement_points(pts, pos_of, lg)
     v = valuation.vor(pts, pos_of, repl)
@@ -39,6 +45,7 @@ def build(lg, *, horizon="season", offline=False):
             "injury": d.get("injury_status"),
         })
     meta = {"replacement": {k: round(x, 1) for k, x in repl.items()},
+            "adp_source": adp_key,
             "notes": notes,
             "unscored": projections.diagnostics(lg, raw)}
     return rows, meta
