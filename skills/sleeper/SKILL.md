@@ -55,13 +55,25 @@ strategy. This file lives outside the plugin and is never published.
 | how good is a player in my league | `player "<name>" --league <league>` |
 | what are my league settings | `show <league>` |
 | before a draft, once | `draft prep <league> [--slot N]` |
-| which leagues am I in | `leagues` |
+| which leagues am I in | `leagues` (alias, name, and shape of each) |
 | start/sit, waivers, drops | not built yet, say so plainly |
 
-If the user has more than one league and does not name one, ask which league.
-Values differ enormously between formats. A quarterback is around rank 11 by VOR
-in a one-quarterback league and rank 1 in a SUPER_FLEX league. Never carry a
-number from one league into another.
+## Naming a league
+
+Every `<league>` argument accepts the user's own words, not only an alias. Pass
+through what they said, in quotes: `board "my 10-team league"`,
+`draft advise "the superflex one"`, `show guillotine`. The tool matches on the
+alias, the league name, the team count, the format (SUPER_FLEX, 2QB, 1QB), and
+the scoring, and it reads the cache only, so this costs nothing.
+
+If more than one league fits, the tool exits with the candidates and a short
+description of each. Show those to the user and ask which one. Never guess, and
+never carry a number from one league into another, because values differ
+enormously between formats. A quarterback is around rank 11 by VOR in a
+one-quarterback league and rank 1 in a SUPER_FLEX league.
+
+If the user names no league at all, the default from `SLEEPER_DEFAULT_LEAGUE` is
+used. Run `sleeper leagues` to see every league with its shape.
 
 ## Draft-day protocol
 

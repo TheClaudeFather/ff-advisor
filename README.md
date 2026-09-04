@@ -62,6 +62,18 @@ sleeper live <league>                   # second terminal panel
 
 Global flags: `--json`, `--offline`, `--refresh`, `--season`.
 
+Any `<league>` argument accepts a description as well as an alias, matched
+against the league name, the team count, the format, and the scoring:
+
+```
+sleeper board "my 10-team league"
+sleeper draft advise "the superflex one"
+sleeper show guillotine
+```
+
+Matching reads the cache only. If a phrase fits more than one league, the tool
+lists the candidates with their shapes instead of guessing.
+
 ## Why league-specific scoring matters
 
 The Sleeper projection feed carries raw stat components, such as `rush_yd`,

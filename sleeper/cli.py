@@ -6,7 +6,8 @@ import json as jsonlib
 import sys
 import time
 
-from . import api, cache, config, draft as draft_mod, league as league_mod, players, render
+from . import (api, cache, config, draft as draft_mod, league as league_mod,
+               match, players, render)
 from .advice import board as board_mod
 from .advice import draft_advice
 
@@ -25,8 +26,30 @@ def _slot(args, cfg):
     """
     if getattr(args, "slot", None):
         return args.slot
-    alias = getattr(args, "league", None) or cfg.get("default_league")
+    alias = config.resolve_alias(cfg, getattr(args, "league", None))
     return (cfg.get("slots") or {}).get(alias)
+
+
+def league_rows(leagues, cfg):
+    """(rows, aliases) for a list of league objects from the API.
+
+    Each row carries a description of the league's shape, so that a person can
+    name a league by what it is rather than by a generated alias.
+    """
+    rows, aliases = [], dict(cfg.get("aliases") or {})
+    slots = cfg.get("slots") or {}
+    known = {str(lid): a for a, lid in aliases.items()}
+    for l in leagues:
+        # An existing alias wins. Generating a second one for a league that is
+        # already aliased made every phrase match two aliases of one league.
+        alias = known.get(str(l["league_id"])) or \
+            "".join(c for c in l["name"].lower() if c.isalnum())[:12]
+        aliases[alias] = l["league_id"]
+        desc = match.describe(l, alias, slot=slots.get(alias))
+        rows.append({"alias": alias, "name": l["name"], "summary": desc["summary"],
+                     "status": l.get("status"), "slot": desc["slot"],
+                     "league_id": l["league_id"]})
+    return rows, aliases
 
 
 def cmd_leagues(args, cfg):
@@ -36,21 +59,20 @@ def cmd_leagues(args, cfg):
     season = args.season or api.state()["season"]
     cfg["season"] = season
     ls = api.leagues(cfg["user_id"], season, refresh=args.refresh)
-    rows, aliases = [], dict(cfg.get("aliases") or {})
-    for l in ls:
-        alias = "".join(c for c in l["name"].lower() if c.isalnum())[:12]
-        aliases[alias] = l["league_id"]
-        rows.append([alias, l["name"], l["settings"]["num_teams"],
-                     l.get("status"), l["league_id"]])
+    rows, aliases = league_rows(ls, cfg)
     cfg["aliases"] = aliases
     if not cfg.get("default_league") and rows:
-        cfg["default_league"] = rows[0][0]
+        cfg["default_league"] = rows[0]["alias"]
     config.save(cfg)
     if args.json:
         return rows
     print(render.banner())
-    print(render.table(rows, ["alias", "name", "teams", "status", "league_id"]))
+    print(render.table(
+        [[r["alias"], r["name"], r["summary"], r["status"], r["league_id"]]
+         for r in rows],
+        ["alias", "name", "shape", "status", "league_id"]))
     print(f"\ndefault league: {cfg['default_league']}  (saved to {config.path()})")
+    print("Name a league by any of it: alias, name, team count, or format.")
 
 
 def cmd_env(args, cfg):
@@ -74,9 +96,12 @@ def cmd_env(args, cfg):
     slots = cfg.get("slots") or {}
     if not aliases:
         print("leagues:  (none - run: sleeper leagues)")
+    shapes = {d["alias"]: d["summary"] for d in match.load_descriptors(cfg)}
     for alias, lid in sorted(aliases.items()):
         slot = f"   slot {slots[alias]}" if alias in slots else ""
-        print(f"  {alias:<14} {lid}{slot}")
+        shape = shapes.get(alias, "(not cached yet)")
+        print(f"  {alias:<14} {shape}{slot}")
+        print(f"  {'':<14} {lid}")
 
 
 def cmd_league_show(args, cfg):
