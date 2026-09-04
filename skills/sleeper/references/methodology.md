@@ -15,14 +15,40 @@ number of teams. Flex slots are allocated only to positions that can fill them.
 An earlier version pooled every leftover player, took the top N by raw points,
 then discarded those that were not flex eligible. Quarterbacks outscore other
 positions in raw points, so they occupied 17 of 20 flex slots and were thrown
-away, which left only 3 of 20 slots allocated and inflated the replacement level
-for running backs and receivers.
+away. That left only 3 of 20 slots allocated, which inflated the replacement
+level for running backs and receivers.
+
+## How much a VOR gap is worth
+
+The arithmetic above is exact. The Rotowire projections underneath it are not.
+A backtest of the 2021 through 2025 preseason projections against actual
+results, top 200 by projection, gives the following.
+
+| Projected gap | Higher projection actually won |
+|---|---|
+| under 25 points | 56.0% |
+| 25 to 50 points | 67.5% |
+| 50 to 100 points | 79.4% |
+| over 100 points | 90.1% |
+
+A gap under 25 points is close to a coin flip. Do not rank two players on it
+and do not call one better. Break such ties on tier, positional need, injury
+status, and the user's own preference. A gap over 100 points is a strong signal.
+
+Accuracy also varies by position. Pooled over five seasons, rank correlation was
+0.64 for quarterbacks, 0.61 for running backs, 0.65 for receivers, and 0.53 for
+tight ends. Tight end is the least predictable position. If a tight end ranks
+highly on projection alone, trust that ranking less.
+
+It is not established whether Sleeper serves the frozen preseason projection for
+a past season. Treat these figures as an optimistic bound.
+`scripts/backtest_projections.py` reproduces the single-season version.
 
 ## The draft score
 
 The draft score is not raw VOR. It is the improvement a player makes to a
 starting lineup whose empty slots hold the best player still gettable at a later
-pick, plus bench value and pick urgency.
+pick. The score then adds bench value and pick urgency.
 
 This matters because raw VOR does not know that a roster is already full at a
 position. A fifth tight end still shows a high VOR even though only one can
@@ -36,9 +62,10 @@ Guards that follow from it:
 - Backups are capped at what the roster can use, so there is no third
   quarterback in a one-quarterback league.
 - Bench value decays for each extra player beyond what a position can start.
-- Caps are penalties, not filters. A filter returned an empty recommendation at
-  the end of a draft, when every remaining candidate exceeded a cap. Returning
-  nothing while the pick clock runs is the worst failure this tool can have.
+- Caps are penalties, not filters. When every remaining candidate exceeded a
+  cap, a filter returned an empty recommendation at the end of a draft.
+  Returning nothing while the pick clock runs is the worst failure this tool
+  can have.
 
 ## The lookahead horizon
 
