@@ -119,6 +119,10 @@ confidence.
   of defending a specific ranking.
 - Threshold bonuses, such as `bonus_rec_yd_100`, first downs, and IDP scoring,
   are excluded on purpose. Multiplying a mean by a threshold bonus is wrong.
+  Position premiums are different and ARE scored: `bonus_rec_te` in a tight end
+  premium league is paid on every reception, so it is worth 0.5 times a tight
+  end's projected catches. Say so when a league has one, because it moves tight
+  ends a long way up the board.
   `show <league>` lists exactly what cannot be computed. Leagues with many such
   bonuses have understated point totals, so say so when you advise there.
 - If a player shows `NO_PROJ`, say so. Never present a silent zero.

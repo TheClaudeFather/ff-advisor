@@ -8,6 +8,12 @@ Threshold bonuses are excluded, because multiplying a projected mean by a
 threshold bonus is wrong. `show <league>` lists every scoring key that cannot be
 computed for that league.
 
+Position premiums are not threshold bonuses and are scored in full. A tight end
+premium (`bonus_rec_te`) is paid on every reception, so a 100-catch tight end in
+a 0.5 premium league earns 50 points that a blanket exclusion would discard. An
+earlier version did discard them, which cost the top tight end 51 points and 15
+places on the board.
+
 ## Value over replacement
 
 VOR subtracts a replacement level derived from `roster_positions` times the

@@ -139,3 +139,47 @@ def test_tiers_increase_monotonically():
     t = tiers(ranked)
     assert t[0] == 1 and t[-1] >= t[0]
     assert all(t[i] <= t[i + 1] for i in range(len(t) - 1))
+
+
+# --- position premiums (TE premium leagues) ---------------------------------
+
+TE_PREMIUM = {"rec": 1.0, "rec_yd": 0.1, "rec_td": 6.0,
+              "bonus_rec_te": 0.5, "bonus_rec_yd_100": 3.0}
+
+
+def test_te_premium_is_paid_on_every_reception():
+    """bonus_rec_te is a flat premium per reception, not a threshold bonus.
+
+    Excluding it undervalued a 100-catch tight end by 50 points.
+    """
+    line = {"rec": 10, "rec_yd": 100, "rec_td": 1}
+    base = 10 * 1.0 + 100 * 0.1 + 6.0
+    assert scoring.score_player(line, TE_PREMIUM, "TE") == base + 5.0
+
+
+def test_te_premium_is_not_paid_to_other_positions():
+    line = {"rec": 10, "rec_yd": 100, "rec_td": 1}
+    base = 10 * 1.0 + 100 * 0.1 + 6.0
+    assert scoring.score_player(line, TE_PREMIUM, "WR") == base
+    assert scoring.score_player(line, TE_PREMIUM, "RB") == base
+
+
+def test_a_zero_weight_premium_changes_nothing():
+    sc = {**TE_PREMIUM, "bonus_rec_te": 0.0}
+    line = {"rec": 10}
+    assert scoring.score_player(line, sc, "TE") == 10.0
+
+
+def test_threshold_bonuses_are_still_excluded_for_every_position():
+    """The 100-yard bonus stays out: a mean is not a threshold."""
+    line = {"rec": 10, "rec_yd": 100, "rec_td": 1}
+    with_threshold = scoring.score_player(line, TE_PREMIUM, "TE")
+    without = scoring.score_player(line, {k: v for k, v in TE_PREMIUM.items()
+                                          if k != "bonus_rec_yd_100"}, "TE")
+    assert with_threshold == without
+
+
+def test_a_computable_premium_is_not_reported_as_a_blind_spot():
+    unscored = scoring.unscored_keys(TE_PREMIUM, {"rec", "rec_yd", "rec_td"})
+    assert "bonus_rec_te" not in unscored
+    assert "bonus_rec_yd_100" in unscored

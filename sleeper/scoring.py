@@ -12,6 +12,16 @@ from __future__ import annotations
 # not earn 0.7 of a 100-yard bonus), so they are excluded and reported instead.
 _BONUS_PREFIXES = ("bonus_",)
 
+# Premiums paid to one position on every event, keyed to the stat they
+# multiply. These are NOT threshold bonuses: a TE premium of 0.5 is paid on
+# every reception, so a 100-catch tight end earns 50 points that the blanket
+# bonus_ exclusion used to throw away.
+POSITION_BONUS = {
+    "bonus_rec_te": ("TE", "rec"),
+    "bonus_rec_wr": ("WR", "rec"),
+    "bonus_rec_rb": ("RB", "rec"),
+}
+
 # Positions with no usable raw components in Sleeper's projections. For these
 # we fall back to the precomputed pts_ppr rather than summing components.
 FALLBACK_POSITIONS = frozenset({"K", "DEF"})
@@ -30,11 +40,22 @@ def score_line(stats: dict, scoring: dict) -> float:
     return sum(w * stats[k] for k, w in scoring.items() if k in stats and w)
 
 
+def position_bonus(stats: dict, scoring: dict, position: str) -> float:
+    """Per-event premiums that only one position is paid."""
+    total = 0.0
+    for key, (pos, stat) in POSITION_BONUS.items():
+        weight = scoring.get(key)
+        if weight and position == pos and stats.get(stat):
+            total += weight * stats[stat]
+    return total
+
+
 def score_player(stats: dict, scoring: dict, position: str) -> float:
     """Score a player, falling back to pts_ppr for K/DEF."""
     if position in FALLBACK_POSITIONS:
         return float(stats.get("pts_ppr") or 0.0)
-    return score_line(stats, scoreable(scoring))
+    return (score_line(stats, scoreable(scoring))
+            + position_bonus(stats, scoring, position))
 
 
 def unscored_keys(scoring: dict, available_stat_keys: set) -> dict:
@@ -42,5 +63,14 @@ def unscored_keys(scoring: dict, available_stat_keys: set) -> dict:
 
     Returns {key: weight}. Mostly K/DST tier scoring and threshold bonuses.
     """
-    return {k: v for k, v in scoring.items()
-            if v and (k not in available_stat_keys or k.startswith(_BONUS_PREFIXES))}
+    out = {}
+    for k, v in scoring.items():
+        if not v:
+            continue
+        if k in POSITION_BONUS:
+            if POSITION_BONUS[k][1] not in available_stat_keys:
+                out[k] = v
+            continue
+        if k not in available_stat_keys or k.startswith(_BONUS_PREFIXES):
+            out[k] = v
+    return out
