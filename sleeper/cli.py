@@ -241,9 +241,13 @@ def cmd_draft(args, cfg):
     print(render.table(
         [[i, r["name"], r["pos"], r["team"], r["pts"], r["vor"], f"T{r['tier']}",
           r["adp"] if r["adp"] is not None else "-", f"{r['surv']}%",
-          "NEED" if r["need"] else "", r["injury"] or ""]
+          "CAP" if r.get("capped") else ("NEED" if r["need"] else ""),
+          r["injury"] or ""]
          for i, r in enumerate(recs, 1)],
         ["#", "player", "pos", "tm", "pts", "VOR", "tier", "ADP", "surv", "", "inj"]))
+    if any(r.get("capped") for r in recs):
+        print("CAP = your roster cannot start another one. Shown because he is "
+              "worth more than the rest of the list, not because he is the pick.")
     print("\nsurv% = crude ADP-based odds he lasts to your next pick. ADP is")
     print("national and a weak prior in a small league. VOR is the real signal.")
     if info.get("superflex"):

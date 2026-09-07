@@ -62,6 +62,50 @@ import os
 LOOKAHEAD_TURNS = int(os.environ.get("SLEEPER_LOOKAHEAD", "10"))
 
 
+def best_usable_vor(avail, capped_positions) -> float:
+    """Best VOR among players this roster could actually use.
+
+    A position the roster has capped must not hold the streamable gate open.
+    At pick 236 a fourth tight end at +14.4 VOR kept a +5 kicker suppressed,
+    even though only one tight end could ever start.
+    """
+    return max((r["vor"] for r in avail
+                if r["pos"] not in STREAMABLE and r["pos"] not in capped_positions),
+               default=0.0)
+
+
+def streamable_suppressed(rounds_left: int, best_alternative_vor: float) -> bool:
+    """Should a kicker or defense still be held back?
+
+    Rounds remaining alone is not enough. Late in a deep league every player
+    left is below replacement, and a kicker worth +5 VOR is then worth more
+    than a fourth running back at -62 who can never start. Hold them back only
+    while a real player is still on the board.
+    """
+    if rounds_left <= LATE_ROUNDS:
+        return False
+    return best_alternative_vor > 0
+
+
+def with_best_capped(shown: list, scored: list) -> list:
+    """Keep the best roster-capped player visible, flagged, never hidden.
+
+    The cap is deliberately heavy, so a capped player drops off the list
+    entirely. That is wrong when he is worth more than everything on it: a
+    fifth receiver at -37.6 outranks the -63 backs that replaced him, and the
+    person picking should see him and decide.
+    """
+    if any(r.get("capped") for r in shown):
+        return shown
+    capped = [r for r in scored if r.get("capped")]
+    if not capped:
+        return shown
+    best = max(capped, key=lambda r: r["vor"])
+    if shown and best["vor"] <= min(r["vor"] for r in shown):
+        return shown
+    return shown + [best]
+
+
 def advise(lg, state, *, top=8, offline=False):
     rows, meta = board_mod.build(lg, offline=offline)
     taken = state.taken
@@ -135,6 +179,9 @@ def advise(lg, state, *, top=8, offline=False):
 
     scored = []
     spread = max(1.0, avail[0]["vor"] - avail[min(len(avail) - 1, 40)]["vor"])
+    capped_positions = {p for p in ("QB", "RB", "WR", "TE")
+                        if have.get(p, 0) >= math.ceil(startable.get(p, 1.0)) + 1}
+    best_alternative_vor = best_usable_vor(avail, capped_positions)
     for r in avail[: max(120, top * 10)]:
         pos = r["pos"]
         mv = lineup_mod.marginal_over_replacement(
@@ -165,7 +212,7 @@ def advise(lg, state, *, top=8, offline=False):
         if pos in STREAMABLE:
             if have.get(pos, 0) >= starting_count.get(pos, 1):
                 capped = True
-            elif rounds_left > LATE_ROUNDS:
+            elif streamable_suppressed(rounds_left, best_alternative_vor):
                 score *= 0.02
         elif have.get(pos, 0) >= math.ceil(startable.get(pos, 1.0)) + 1:
             # Never carry more backups than the roster can use. A third
@@ -180,7 +227,8 @@ def advise(lg, state, *, top=8, offline=False):
                        "need": pos in needed_pos,
                        "surv": round(surv * 100)})
     scored.sort(key=lambda r: -r["score"])
-    return scored[:top], {"needs": needs, "have": dict(have), "meta": meta,
+    shown = with_best_capped(scored[:top], scored)
+    return shown, {"needs": needs, "have": dict(have), "meta": meta,
                           "superflex": superflex,
                           "next_pick": state.next_pick(),
                           "pick_after": state.pick_after_next(),
