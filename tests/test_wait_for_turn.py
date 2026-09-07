@@ -44,3 +44,14 @@ def test_it_gives_up_at_the_timeout_and_returns_the_last_board():
     st = wait_for_turn(lambda: _state(2), timeout=10, interval=1,
                        sleep=lambda s: None, now=lambda: next(clock))
     assert not st.is_my_turn()
+
+
+def test_it_ignores_a_turn_we_have_already_used():
+    """Sleeper had not published our pick yet, so the board still said it was
+    our turn at the pick we had just made, and the poll fired instantly with a
+    board that still listed the player we had taken."""
+    states = [_state(0), _state(0), _state(0, slot=8)]
+
+    st = wait_for_turn(lambda: states.pop(0), after=3, timeout=10, interval=1,
+                       sleep=lambda s: None, now=lambda: 0.0)
+    assert st.on_the_clock_overall == 8

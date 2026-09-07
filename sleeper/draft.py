@@ -145,7 +145,7 @@ def survival_prob(adp, next_pick) -> float:
     return 1 / (1 + math.exp((next_pick - adp) / scale))
 
 
-def wait_for_turn(load_state, *, timeout=90.0, interval=2.0,
+def wait_for_turn(load_state, *, after=None, timeout=90.0, interval=2.0,
                   now=None, sleep=None):
     """Poll until it is our turn, then return that state.
 
@@ -159,9 +159,19 @@ def wait_for_turn(load_state, *, timeout=90.0, interval=2.0,
 
     now = now or time.monotonic
     sleep = sleep or time.sleep
+
+    def ours(st):
+        # `after` is the overall number of the pick we just made. Sleeper can
+        # take several seconds to publish it, and until it does the board still
+        # says that pick is on the clock, so the poll would fire at once with a
+        # board that still lists the player we took.
+        if after is not None and st.on_the_clock_overall <= after:
+            return False
+        return st.is_my_turn()
+
     deadline = now() + timeout
     st = load_state()
-    while not st.is_my_turn() and now() < deadline:
+    while not ours(st) and now() < deadline:
         sleep(interval)
         st = load_state()
     return st

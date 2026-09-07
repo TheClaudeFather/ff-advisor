@@ -202,7 +202,7 @@ def cmd_draft(args, cfg):
     if getattr(args, "wait", 0):
         st = draft_mod.wait_for_turn(
             lambda: draft_mod.load_state(lg.league_id, slot=slot),
-            timeout=args.wait)
+            after=args.after, timeout=args.wait)
     else:
         st = draft_mod.load_state(lg.league_id, slot=slot)
     picks_age = time.time() - t0
@@ -311,6 +311,9 @@ def main(argv=None):
     s.add_argument("--top", type=int, default=8)
     s.add_argument("--wait", type=float, default=0, metavar="SECONDS",
                    help="poll until it is our turn before advising")
+    s.add_argument("--after", type=int, default=None, metavar="PICK",
+                   help="overall number of the pick we just made, so --wait "
+                        "does not fire on a board that has not published it")
     s = sub.add_parser("live", parents=[common])
     s.add_argument("league", nargs="?"); s.add_argument("--slot", type=int)
     s.add_argument("--top", type=int, default=10)

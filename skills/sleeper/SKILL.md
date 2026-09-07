@@ -83,7 +83,10 @@ used. Run `sleeper leagues` to see every league with its shape.
    panel is their safety net and works even if this session is slow. Never run
    `live` yourself, because it blocks forever.
 3. When the user says they are on the clock, run
-   `draft advise <league> --wait 90 --json`. The `--wait` flag polls until the
+   `draft advise <league> --wait 90 --after <their last pick number> --json`.
+   Pass `--after` whenever they have already made a pick, because Sleeper takes
+   seconds to publish it and the board still shows that pick on the clock until
+   it does. The `--wait` flag polls until the
    board says it is actually their turn, which matters: advising while the pick
    before theirs is still running recommends players who are about to be taken,
    and that happened live. Then answer in under 20 seconds with one pick, one
