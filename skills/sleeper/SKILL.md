@@ -56,7 +56,9 @@ strategy. This file lives outside the plugin and is never published.
 | what are my league settings | `show <league>` |
 | before a draft, once | `draft prep <league> [--slot N]` |
 | which leagues am I in | `leagues` (alias, name, and shape of each) |
-| start/sit, waivers, drops | not built yet, say so plainly |
+| who do I start, or should I bench X | `lineup <league> [--week N]` |
+| who should I pick up | `waivers <league> [--top 10] [--pos RB]` |
+| who should I drop | `drops <league>` |
 
 ## Naming a league
 
@@ -74,6 +76,33 @@ one-quarterback league and rank 1 in a SUPER_FLEX league.
 
 If the user names no league at all, the default from `SLEEPER_DEFAULT_LEAGUE` is
 used. Run `sleeper leagues` to see every league with its shape.
+
+## In-season protocol
+
+`lineup` compares the lineup the user has set against the best one their roster
+can field, and names each change by slot. Read it before answering any start or
+sit question, and never invent a player who is not in the output.
+
+Three things to say out loud when they appear:
+
+- A `NO_PROJ` warning means Sleeper published no projection for that player
+  this week. That usually means a bye, but it can also mean the feed is late.
+  Never present it as a zero.
+- An `UNKNOWN_PLAYER` warning means the player database is stale. Tell the user
+  to run `refresh players`.
+- An `unfilled` slot means no player on the roster can fill it, so they must
+  add someone.
+
+`waivers` and `drops` default to the rest-of-season horizon, because a single
+week is too noisy to justify a roster move. Pass `--horizon week` when the
+question really is about this Sunday. The `adds` column is what a player would
+add to the user's own starting lineup, not his raw points, so a good player at
+a position they are already full at correctly shows zero. When every candidate
+shows zero, the command lists the best free agent at each position instead,
+which is the honest answer to "who should I pick up" when nobody helps.
+
+Before you recommend adding or starting anyone, search the web for news on that
+player. Projections lag injuries, suspensions, and depth chart changes by days.
 
 ## Draft-day protocol
 
