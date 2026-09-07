@@ -9,7 +9,13 @@ from pathlib import Path
 
 from . import api, cache
 
-SLIM = cache.ROOT / "players" / "slim.json"
+def slim_path():
+    """Where the slim index lives.
+
+    A function, not a constant: bound at import time it ignored any later
+    redirect of cache.ROOT, so tests read the developer's real player database.
+    """
+    return cache.ROOT / "players" / "slim.json"
 
 _KEEP = ("position", "team", "status", "injury_status", "age",
          "years_exp", "depth_chart_order", "search_rank")
@@ -35,19 +41,21 @@ def _build_slim(raw: dict) -> dict:
 def refresh(**kw) -> int:
     raw = api.players_raw(refresh=True, **kw)
     slim = _build_slim(raw)
-    SLIM.parent.mkdir(parents=True, exist_ok=True)
-    SLIM.write_text(json.dumps(slim))
+    path = slim_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(slim))
     return len(slim)
 
 
 def load(*, offline=False) -> dict:
     """{player_id: {name, position, team, status, injury_status, ...}}"""
-    if SLIM.exists():
-        return json.loads(SLIM.read_text())
+    slim = slim_path()
+    if slim.exists():
+        return json.loads(slim.read_text())
     if offline:
         raise RuntimeError("player DB not cached and --offline set; run: sleeper refresh players")
     refresh()
-    return json.loads(SLIM.read_text())
+    return json.loads(slim_path().read_text())
 
 
 def age_seconds():
