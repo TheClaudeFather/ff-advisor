@@ -198,7 +198,13 @@ def cmd_draft(args, cfg):
         return
 
     t0 = time.time()
-    st = draft_mod.load_state(lg.league_id, slot=_slot(args, cfg))
+    slot = _slot(args, cfg)
+    if getattr(args, "wait", 0):
+        st = draft_mod.wait_for_turn(
+            lambda: draft_mod.load_state(lg.league_id, slot=slot),
+            timeout=args.wait)
+    else:
+        st = draft_mod.load_state(lg.league_id, slot=slot)
     picks_age = time.time() - t0
 
     if args.sub == "status":
@@ -223,6 +229,9 @@ def cmd_draft(args, cfg):
     if st.slot is None:
         print("! draft_order not published yet - pass --slot N for pick math")
     rnd, sl = st.round_and_slot()
+    if getattr(args, "wait", 0) and not st.is_my_turn():
+        print(f"! waited {args.wait:.0f}s and it is still not your turn. "
+              f"This board is {st.picks_until_mine()} picks before yours.")
     mine = " <<< YOU ARE ON THE CLOCK" if st.is_my_turn() else ""
     print(f"pick {rnd}.{sl:02d} (overall {st.on_the_clock_overall}){mine}")
     if st.next_pick():
@@ -300,6 +309,8 @@ def main(argv=None):
     s.add_argument("sub", choices=["prep", "status", "advise"])
     s.add_argument("league", nargs="?"); s.add_argument("--slot", type=int)
     s.add_argument("--top", type=int, default=8)
+    s.add_argument("--wait", type=float, default=0, metavar="SECONDS",
+                   help="poll until it is our turn before advising")
     s = sub.add_parser("live", parents=[common])
     s.add_argument("league", nargs="?"); s.add_argument("--slot", type=int)
     s.add_argument("--top", type=int, default=10)

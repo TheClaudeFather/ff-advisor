@@ -143,3 +143,25 @@ def survival_prob(adp, next_pick) -> float:
     import math
     scale = 8 + 0.15 * adp
     return 1 / (1 + math.exp((next_pick - adp) / scale))
+
+
+def wait_for_turn(load_state, *, timeout=90.0, interval=2.0,
+                  now=None, sleep=None):
+    """Poll until it is our turn, then return that state.
+
+    Advising on a board that is one pick stale recommends players who are
+    already gone. That happened live: the pick before ours took the
+    quarterback we had just been told to take. Returns the last state seen if
+    the timeout passes first, because silence on a pick clock is worse than
+    slightly old advice, and the caller reports the staleness.
+    """
+    import time
+
+    now = now or time.monotonic
+    sleep = sleep or time.sleep
+    deadline = now() + timeout
+    st = load_state()
+    while not st.is_my_turn() and now() < deadline:
+        sleep(interval)
+        st = load_state()
+    return st

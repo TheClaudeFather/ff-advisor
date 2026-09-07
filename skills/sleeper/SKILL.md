@@ -49,7 +49,7 @@ strategy. This file lives outside the plugin and is never published.
 
 | The user asks | Run |
 |---|---|
-| who should I draft, or I am on the clock | `draft advise <league> [--slot N]` |
+| who should I draft, or I am on the clock | `draft advise <league> --wait 90` |
 | show me the board, or best available | `board <league> --top 40 [--pos RB]` |
 | what is the draft status | `draft status <league>` |
 | how good is a player in my league | `player "<name>" --league <league>` |
@@ -82,9 +82,14 @@ used. Run `sleeper leagues` to see every league with its shape.
 2. Tell the user to open a second terminal running `sleeper live <league>`. That
    panel is their safety net and works even if this session is slow. Never run
    `live` yourself, because it blocks forever.
-3. When the user is on the clock, run `draft advise <league> --json`, then answer
-   in under 20 seconds with one pick, one alternative, and one sentence of why.
-   Write no essays on a 120-second clock.
+3. When the user says they are on the clock, run
+   `draft advise <league> --wait 90 --json`. The `--wait` flag polls until the
+   board says it is actually their turn, which matters: advising while the pick
+   before theirs is still running recommends players who are about to be taken,
+   and that happened live. Then answer in under 20 seconds with one pick, one
+   alternative, and one sentence of why. Write no essays on a 60-second clock.
+   If the output carries the "still not your turn" warning, say so, because the
+   board is then that many picks ahead of what they see.
 4. Before you finalize any pick, search the web for breaking injury news about
    the top candidate. Projections lag real events. Report anything that
    overrides the math. If there is nothing, stay quiet and go with the numbers.
