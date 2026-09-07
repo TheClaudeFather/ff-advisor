@@ -6,8 +6,10 @@ import json as jsonlib
 import sys
 import time
 
-from . import (api, cache, config, draft as draft_mod, league as league_mod,
-               match, players, projections, render, season)
+from . import (api, cache, config, draft as draft_mod, env,
+               league as league_mod, match, players, projections, render,
+               season)
+from .advice import digest as digest_mod
 from .advice import inseason, lineup_advice, survival, wire
 from .advice import board as board_mod
 from .advice import draft_advice
@@ -384,6 +386,85 @@ def cmd_survival(args, cfg):
     print("  this does not model.")
 
 
+def cmd_digest(args, cfg):
+    """The weekly routine: lineup, adds, drops, and the cut line."""
+    lg = _lg(args, cfg)
+    roster = _roster(args, cfg, lg)
+    alias = config.resolve_alias(cfg, args.league)
+    elimination = alias in config.elimination_leagues()
+    week, live = _weeks(args, cfg)
+    db = players.load(offline=args.offline)
+    pos_of = {p: d.get("position") for p, d in db.items()}
+    try:
+        week_pts, opp = projections.points(lg, f"week:{week}", current_week=live,
+                                           offline=args.offline)
+        ros_pts, _ = projections.points(lg, "ros", current_week=live,
+                                        offline=args.offline)
+    except RuntimeError as e:
+        raise SystemExit(f"{e}\n  Run: sleeper refresh projections")
+
+    rostered = league_mod.rostered_players(lg.league_id, offline=args.offline)
+    free = {p for p in ros_pts if p not in rostered and pos_of.get(p)}
+    rosters = (league_mod.all_rosters(lg.league_id, offline=args.offline)
+               if elimination else None)
+
+    out = digest_mod.build(lg, roster, week=week, week_pts=week_pts,
+                           ros_pts=ros_pts, pos_of=pos_of, db=db,
+                           free_ids=free, rosters=rosters,
+                           elimination=elimination, cut=args.cut, top=args.top)
+
+    if not args.no_snapshot:
+        out["snapshot"] = str(digest_mod.snapshot(
+            env.home(), lg.league_id, week,
+            {p: week_pts.get(p, 0.0) for p in rostered}))
+
+    if args.json:
+        return out
+
+    name = lambda pid: (db.get(pid) or {}).get("name", pid)  # noqa: E731
+    ln = out["lineup"]
+    print(render.banner())
+    print(f"{lg.name}  |  week {week}\n")
+
+    print(f"LINEUP   projected {ln['optimal_total']}  "
+          f"(now {ln['current_total']}, {ln['gain']:+} available)")
+    if ln["swaps"]:
+        for sw in ln["swaps"]:
+            leaving = f"OUT {name(sw['out'])}" if sw["out"] else "empty slot"
+            print(f"  {sw['slot']:<11} {leaving:<26} IN {name(sw['in'])}  "
+                  f"{sw['gain']:+}")
+    else:
+        print("  no changes: this is already the best lineup available.")
+    if ln["optimal"]["unfilled"]:
+        print(f"  ! no eligible player for: {', '.join(ln['optimal']['unfilled'])}")
+
+    print("\nADDS     rest of season, by what they add to your lineup")
+    if all(t["marginal"] == 0.0 for t in out["waivers"]):
+        print("  nobody on the wire improves your starting lineup.")
+    else:
+        for t in out["waivers"]:
+            if t["marginal"] > 0:
+                print(f"  {name(t['player_id'])[:24]:<24} {t['pos']:<4} "
+                      f"adds {t['marginal']:+}   drop {name(t['drop']['player_id'])}")
+
+    print("\nDROPS    safest first")
+    for d in out["drops"]:
+        note = ("BREAKS LINEUP" if d["breaks_lineup"] else
+                ("starter" if d["starting"] else "safe"))
+        print(f"  {name(d['player_id'])[:24]:<24} {d['pos']:<4} "
+              f"costs {d['cost']:<6} {note}")
+
+    if out["survival"]:
+        sv = out["survival"]
+        where = (f"projected to be cut, {sv['gap_to_safety']} below safety"
+                 if sv["at_risk"] else
+                 f"{sv['margin']} points above the cut line")
+        print(f"\nCUT LINE rank {sv['my_rank']} of {len(sv['ranked'])}, {where}")
+
+    for w in ln["warnings"]:
+        print(f"! {w['code']} {name(w['player_id'])}: {w['note']}")
+
+
 def cmd_board(args, cfg):
     lg = _lg(args, cfg)
     rows, meta = board_mod.build(lg, offline=args.offline)
@@ -546,6 +627,12 @@ def main(argv=None):
     s.add_argument("league", nargs="?")
     s.add_argument("--week", type=int); s.add_argument("--cut", type=int, default=1)
     s.add_argument("--force", action="store_true")
+    s = sub.add_parser("digest", parents=[common])
+    s.add_argument("league", nargs="?")
+    s.add_argument("--week", type=int); s.add_argument("--top", type=int, default=5)
+    s.add_argument("--cut", type=int, default=1)
+    s.add_argument("--roster-id", type=int, dest="roster_id")
+    s.add_argument("--no-snapshot", action="store_true")
     s = sub.add_parser("board", parents=[common])
     s.add_argument("league", nargs="?"); s.add_argument("--pos")
     s.add_argument("--top", type=int, default=40)
@@ -567,6 +654,7 @@ def main(argv=None):
     cfg = config.load()
     fn = {"leagues": cmd_leagues, "env": cmd_env, "lineup": cmd_lineup,
           "waivers": cmd_waivers, "drops": cmd_drops, "survival": cmd_survival,
+          "digest": cmd_digest,
           "show": cmd_league_show, "refresh": cmd_refresh,
           "player": cmd_player, "board": cmd_board, "draft": cmd_draft,
           "live": cmd_live}[args.cmd]

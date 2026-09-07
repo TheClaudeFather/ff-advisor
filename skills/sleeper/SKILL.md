@@ -60,6 +60,7 @@ strategy. This file lives outside the plugin and is never published.
 | who should I pick up | `waivers <league> [--top 10] [--pos RB]` |
 | who should I drop | `drops <league>` |
 | am I getting cut this week | `survival <league>` (elimination leagues only) |
+| what should I do this week | `digest <league>` (all of the above, one report) |
 
 ## Naming a league
 
@@ -101,6 +102,11 @@ add to the user's own starting lineup, not his raw points, so a good player at
 a position they are already full at correctly shows zero. When every candidate
 shows zero, the command lists the best free agent at each position instead,
 which is the honest answer to "who should I pick up" when nobody helps.
+
+`digest` is the weekly routine in one command and is the right first call on a
+Tuesday or a Sunday morning. It also writes a snapshot of what was projected
+for every rostered player, which is what makes grading the projections possible
+later, so prefer it over running the commands separately.
 
 `survival` ranks every team in an elimination league by projected points and
 reports the distance to the cut line. It is a margin, not odds: Sleeper

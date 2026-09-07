@@ -64,6 +64,7 @@ sleeper lineup <league>                 # start/sit: changes, by slot
 sleeper waivers <league> --top 10       # who to add, ranked by what they add
 sleeper drops <league>                  # who to drop, safest first
 sleeper survival <league>               # elimination leagues: distance to the cut
+sleeper digest <league>                 # all of the above, one weekly report
 ```
 
 The in-season commands rank by what a player does to your own starting lineup,
