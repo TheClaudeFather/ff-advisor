@@ -89,7 +89,8 @@ class Roster:
     roster_id: int
     owner_id: str | None
     players: list
-    starters: list
+    starters: list          # who is starting, placeholders removed
+    slots: list             # the raw positional list, "0" for an empty slot
     reserve: list
     taxi: list
 
@@ -133,14 +134,32 @@ def owns(raw_roster: dict, user_id) -> bool:
 
 
 def _roster(raw: dict) -> Roster:
+    slots = list(raw.get("starters") or [])
     return Roster(
         roster_id=raw.get("roster_id"),
         owner_id=raw.get("owner_id"),
         players=list(raw.get("players") or []),
-        starters=[p for p in (raw.get("starters") or []) if p and p != EMPTY_SLOT],
+        starters=[p for p in slots if p and p != EMPTY_SLOT],
+        slots=slots,
         reserve=list(raw.get("reserve") or []),
         taxi=list(raw.get("taxi") or []),
     )
+
+
+def current_starters(lg, roster) -> list:
+    """[(slot, player_id or None)] for the lineup as it stands.
+
+    Sleeper stores `starters` positionally against roster_positions, with "0"
+    for a slot nobody is in, so the slot a player occupies is knowable and a
+    recommendation can name it. A payload of the wrong length is not zipped
+    blind: the extra slots come back empty rather than silently shifting every
+    player one place.
+    """
+    out = []
+    for i, slot in enumerate(lg.starter_slots):
+        pid = roster.slots[i] if i < len(roster.slots) else None
+        out.append((slot, pid if pid and pid != EMPTY_SLOT else None))
+    return out
 
 
 def rosters_from(raw_rosters) -> list:

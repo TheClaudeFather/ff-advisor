@@ -7,7 +7,8 @@ import sys
 import time
 
 from . import (api, cache, config, draft as draft_mod, league as league_mod,
-               match, players, render)
+               match, players, projections, render, season)
+from .advice import lineup_advice
 from .advice import board as board_mod
 from .advice import draft_advice
 
@@ -162,6 +163,75 @@ def cmd_player(args, cfg):
         print(f"  NO_PROJ - no projection available in {lg.name}")
 
 
+def _roster(args, cfg, lg):
+    """The team being advised on, or a clear exit explaining why not."""
+    roster_id = getattr(args, "roster_id", None) or lg.my_roster_id
+    if roster_id is None:
+        raise SystemExit(
+            f"I do not know which team is yours in {lg.name}.\n"
+            "  Run: sleeper leagues   (it stores your user id)\n"
+            "  or pass --roster-id N")
+    roster = league_mod.roster_of(lg.league_id, roster_id, offline=args.offline)
+    if roster is None:
+        raise SystemExit(f"no roster {roster_id} in {lg.name}")
+    return roster
+
+
+def _weeks(args, cfg):
+    """(advice week, live week). They differ on the days that matter."""
+    try:
+        state = api.state(offline=args.offline)
+    except Exception:  # noqa: BLE001
+        state = {}
+    return (season.resolve_week(state, getattr(args, "week", None)),
+            season.live_week(state))
+
+
+def cmd_lineup(args, cfg):
+    lg = _lg(args, cfg)
+    roster = _roster(args, cfg, lg)
+    week, live = _weeks(args, cfg)
+    db = players.load(offline=args.offline)
+    pos_of = {p: d.get("position") for p, d in db.items()}
+    try:
+        pts, opp = projections.points(lg, f"week:{week}", current_week=live,
+                                      offline=args.offline)
+    except RuntimeError as e:
+        raise SystemExit(f"{e}\n  Run: sleeper refresh projections")
+
+    out = lineup_advice.advise(lg, roster, pts, pos_of, db, week=week)
+    if args.json:
+        return out
+
+    name = out["names"].get
+    print(render.banner())
+    print(f"{lg.name}  |  week {week}  |  "
+          f"projected {out['optimal_total']}  "
+          f"(now {out['current_total']}, {out['gain']:+} available)\n")
+    joining = {s["in"] for s in out["swaps"]}
+    print(render.table(
+        [[slot, name(pid, pid), (db.get(pid) or {}).get("position", ""),
+          (db.get(pid) or {}).get("team", ""), opp.get(pid, "") or "",
+          round(value, 1), "START" if pid in joining else "",
+          (db.get(pid) or {}).get("injury_status") or ""]
+         for slot, pid, value in out["optimal"]["starters"]],
+        ["slot", "player", "pos", "tm", "opp", "pts", "", "inj"]))
+
+    if out["swaps"]:
+        print("\nchanges:")
+        for s in out["swaps"]:
+            leaving = f"OUT {name(s['out'], s['out'])}" if s["out"] else "empty slot"
+            print(f"  {s['slot']:<11} {leaving:<28} "
+                  f"IN {name(s['in'], s['in'])}  {s['gain']:+}")
+    else:
+        print("\nno changes: this is already the best lineup available.")
+
+    if out["optimal"]["unfilled"]:
+        print(f"\n! no eligible player for: {', '.join(out['optimal']['unfilled'])}")
+    for w in out["warnings"]:
+        print(f"! {w['code']} {name(w['player_id'], w['player_id'])}: {w['note']}")
+
+
 def cmd_board(args, cfg):
     lg = _lg(args, cfg)
     rows, meta = board_mod.build(lg, offline=args.offline)
@@ -306,6 +376,10 @@ def main(argv=None):
     s.add_argument("what", nargs="?", choices=["players", "projections", "all"])
     s = sub.add_parser("player", parents=[common])
     s.add_argument("name"); s.add_argument("--league")
+    s = sub.add_parser("lineup", parents=[common])
+    s.add_argument("league", nargs="?")
+    s.add_argument("--week", type=int, help="default: the live week")
+    s.add_argument("--roster-id", type=int, dest="roster_id")
     s = sub.add_parser("board", parents=[common])
     s.add_argument("league", nargs="?"); s.add_argument("--pos")
     s.add_argument("--top", type=int, default=40)
@@ -325,7 +399,7 @@ def main(argv=None):
 
     args = ap.parse_args(argv)
     cfg = config.load()
-    fn = {"leagues": cmd_leagues, "env": cmd_env,
+    fn = {"leagues": cmd_leagues, "env": cmd_env, "lineup": cmd_lineup,
           "show": cmd_league_show, "refresh": cmd_refresh,
           "player": cmd_player, "board": cmd_board, "draft": cmd_draft,
           "live": cmd_live}[args.cmd]
