@@ -8,7 +8,7 @@ import time
 
 from . import (api, cache, config, draft as draft_mod, league as league_mod,
                match, players, projections, render, season)
-from .advice import inseason, lineup_advice, wire
+from .advice import inseason, lineup_advice, survival, wire
 from .advice import board as board_mod
 from .advice import draft_advice
 
@@ -321,6 +321,69 @@ def cmd_drops(args, cfg):
     print("far he is above the best free agent at his position.")
 
 
+def cmd_survival(args, cfg):
+    lg = _lg(args, cfg)
+    alias = config.resolve_alias(cfg, args.league)
+    elimination = config.elimination_leagues()
+    if alias not in elimination and not args.force:
+        raise SystemExit(
+            f"{lg.name} is not marked as an elimination league.\n"
+            f"  Add SLEEPER_ELIMINATION={alias} to {config.path()}\n"
+            "  or pass --force to see the table anyway.")
+
+    week, live = _weeks(args, cfg)
+    db = players.load(offline=args.offline)
+    pos_of = {p: d.get("position") for p, d in db.items()}
+    try:
+        pts, _opp = projections.points(lg, f"week:{week}", current_week=live,
+                                       offline=args.offline)
+    except RuntimeError as e:
+        raise SystemExit(f"{e}\n  Run: sleeper refresh projections")
+
+    rosters = league_mod.all_rosters(lg.league_id, offline=args.offline)
+    teams = [survival.project_team(lg, r, pts, pos_of) for r in rosters]
+    out = survival.cut_margin(teams, lg.my_roster_id, cut=args.cut)
+
+    names = {}
+    try:
+        for u in api.league_users(lg.league_id, offline=args.offline):
+            names[str(u.get("user_id"))] = (u.get("display_name")
+                                            or u.get("username") or "")
+    except Exception:  # noqa: BLE001 - names are a nicety, not the answer
+        pass
+
+    def team_name(t):
+        return names.get(str(t["owner_id"]), f"roster {t['roster_id']}")
+
+    if args.json:
+        return {"league": lg.name, "week": week, "teams": len(teams),
+                "cut": out["cut"], "my_rank": out["my_rank"],
+                "margin": out["margin"], "at_risk": out["at_risk"],
+                "ranked": [{**t, "name": team_name(t)} for t in out["ranked"]]}
+
+    print(render.banner())
+    cut_note = f"{args.cut} team is cut" if args.cut == 1 else f"{args.cut} teams are cut"
+    print(f"{lg.name}  |  week {week}  |  {len(teams)} teams  |  {cut_note}\n")
+    print(render.table(
+        [[i, "YOU" if t["roster_id"] == lg.my_roster_id else team_name(t),
+          round(t["projected"], 1), t["rule"],
+          f"{t['bench_left']:+}" if t["bench_left"] else "",
+          "CUT" if t["roster_id"] in out["cut"] else ""]
+         for i, t in enumerate(out["ranked"], 1)],
+        ["#", "team", "proj", "from", "on bench", ""]))
+
+    if out["my_rank"] is None:
+        print("\n! I do not know which team is yours, so there is no margin.")
+    elif out["at_risk"]:
+        print(f"\nyou are projected to be cut, {out['gap_to_safety']} points "
+              "below safety.")
+    else:
+        print(f"\nyou are {out['margin']} points above the cut line.")
+    print("! this is a projection, not odds. Expected points is the right goal")
+    print("  while you are comfortable; on the line you want variance, which")
+    print("  this does not model.")
+
+
 def cmd_board(args, cfg):
     lg = _lg(args, cfg)
     rows, meta = board_mod.build(lg, offline=args.offline)
@@ -479,6 +542,10 @@ def main(argv=None):
     s.add_argument("--week", type=int); s.add_argument("--top", type=int, default=8)
     s.add_argument("--horizon", choices=["ros", "week"])
     s.add_argument("--roster-id", type=int, dest="roster_id")
+    s = sub.add_parser("survival", parents=[common])
+    s.add_argument("league", nargs="?")
+    s.add_argument("--week", type=int); s.add_argument("--cut", type=int, default=1)
+    s.add_argument("--force", action="store_true")
     s = sub.add_parser("board", parents=[common])
     s.add_argument("league", nargs="?"); s.add_argument("--pos")
     s.add_argument("--top", type=int, default=40)
@@ -499,7 +566,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     cfg = config.load()
     fn = {"leagues": cmd_leagues, "env": cmd_env, "lineup": cmd_lineup,
-          "waivers": cmd_waivers, "drops": cmd_drops,
+          "waivers": cmd_waivers, "drops": cmd_drops, "survival": cmd_survival,
           "show": cmd_league_show, "refresh": cmd_refresh,
           "player": cmd_player, "board": cmd_board, "draft": cmd_draft,
           "live": cmd_live}[args.cmd]

@@ -59,6 +59,7 @@ strategy. This file lives outside the plugin and is never published.
 | who do I start, or should I bench X | `lineup <league> [--week N]` |
 | who should I pick up | `waivers <league> [--top 10] [--pos RB]` |
 | who should I drop | `drops <league>` |
+| am I getting cut this week | `survival <league>` (elimination leagues only) |
 
 ## Naming a league
 
@@ -100,6 +101,14 @@ add to the user's own starting lineup, not his raw points, so a good player at
 a position they are already full at correctly shows zero. When every candidate
 shows zero, the command lists the best free agent at each position instead,
 which is the honest answer to "who should I pick up" when nobody helps.
+
+`survival` ranks every team in an elimination league by projected points and
+reports the distance to the cut line. It is a margin, not odds: Sleeper
+publishes no distribution of weekly scores, so never call it a probability.
+Say the caveat it prints, which is that maximizing expected points is the right
+goal while comfortable and the wrong one when on the line, where variance helps
+and this tool does not model it. The command only runs for leagues named in
+`SLEEPER_ELIMINATION`.
 
 Before you recommend adding or starting anyone, search the web for news on that
 player. Projections lag injuries, suspensions, and depth chart changes by days.

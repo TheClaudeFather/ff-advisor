@@ -44,6 +44,7 @@ this repository. See `.env.example` for the full list of keys, and run
 | `SLEEPER_SLOTS` | `alias:slot` pairs, your draft position per league |
 | `SLEEPER_HOME` | where the cache, .env, and notes live, default `~/.sleeper` |
 | `SLEEPER_NOTES` | private league notes the skill reads, default `$SLEEPER_HOME/notes.md` |
+| `SLEEPER_ELIMINATION` | aliases of leagues that cut a team every week |
 
 ## Usage
 
@@ -62,6 +63,7 @@ sleeper live <league>                   # second terminal panel
 sleeper lineup <league>                 # start/sit: changes, by slot
 sleeper waivers <league> --top 10       # who to add, ranked by what they add
 sleeper drops <league>                  # who to drop, safest first
+sleeper survival <league>               # elimination leagues: distance to the cut
 ```
 
 The in-season commands rank by what a player does to your own starting lineup,
