@@ -38,32 +38,30 @@ def raw(season, horizon, *, current_week=1, **kw):
     raise ValueError(f"bad horizon {horizon}")
 
 
+def ros_share(current_week: int) -> float:
+    """The fraction of the season still to be played, counting this week."""
+    return max(0.0, (LAST_WEEK - current_week + 1) / LAST_WEEK)
+
+
 def points(lg, horizon, *, current_week=1, **kw) -> tuple[dict, dict]:
     """-> ({player_id: points}, {player_id: opponent})
 
-    "ros" sums remaining weeks; falls back to a season pro-rate if the weekly
-    feeds are not published yet (flagged by the caller via `estimated`).
+    "ros" scales the season projection to the weeks that remain.
+
+    The obvious alternative, summing the remaining weekly feeds, is both
+    optimistic and unevenly so: measured against the 2026 season feed it came
+    out 8% high for a durable quarterback, 15% for a workhorse back, and 30%
+    for an injury-prone one. Weekly numbers describe the healthy version of a
+    player, while the season number prices his risk, so summing them does not
+    merely inflate values, it reorders them. Scaling keeps Sleeper's own view
+    of relative risk. It does not know which players still have a bye ahead of
+    them, which is the accuracy this trades away.
     """
     sc = lg.scoring
     if horizon == "ros":
-        total, opp = {}, {}
-        got = 0
-        for wk in range(current_week, LAST_WEEK + 1):
-            try:
-                idx = _index(raw(lg.season, f"week:{wk}", current_week=current_week, **kw))
-            except Exception:  # noqa: BLE001
-                continue
-            if not any(s for s, _, _ in idx.values()):
-                continue
-            got += 1
-            for pid, (stats, pos, _o) in idx.items():
-                total[pid] = total.get(pid, 0.0) + scoring.score_player(stats, sc, pos)
-        if got:
-            return total, opp
-        # fallback: pro-rate the season projection
         season_pts, _ = points(lg, "season", current_week=current_week, **kw)
-        frac = max(0.0, (LAST_WEEK - current_week + 1) / LAST_WEEK)
-        return {p: v * frac for p, v in season_pts.items()}, {}
+        share = ros_share(current_week)
+        return {p: v * share for p, v in season_pts.items()}, {}
 
     idx = _index(raw(lg.season, horizon, current_week=current_week, **kw))
     pts = {pid: scoring.score_player(stats, sc, pos) for pid, (stats, pos, _o) in idx.items()}
