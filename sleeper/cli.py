@@ -6,8 +6,11 @@ import json as jsonlib
 import sys
 import time
 
-from . import (api, cache, config, draft as draft_mod, league as league_mod,
-               match, players, render)
+from . import (api, cache, config, draft as draft_mod, env,
+               league as league_mod, match, players, projections, render,
+               season)
+from .advice import digest as digest_mod
+from .advice import inseason, lineup_advice, survival, wire
 from .advice import board as board_mod
 from .advice import draft_advice
 
@@ -162,6 +165,306 @@ def cmd_player(args, cfg):
         print(f"  NO_PROJ - no projection available in {lg.name}")
 
 
+def _roster(args, cfg, lg):
+    """The team being advised on, or a clear exit explaining why not."""
+    roster_id = getattr(args, "roster_id", None) or lg.my_roster_id
+    if roster_id is None:
+        raise SystemExit(
+            f"I do not know which team is yours in {lg.name}.\n"
+            "  Run: sleeper leagues   (it stores your user id)\n"
+            "  or pass --roster-id N")
+    roster = league_mod.roster_of(lg.league_id, roster_id, offline=args.offline)
+    if roster is None:
+        raise SystemExit(f"no roster {roster_id} in {lg.name}")
+    return roster
+
+
+def _weeks(args, cfg):
+    """(advice week, live week). They differ on the days that matter."""
+    try:
+        state = api.state(offline=args.offline)
+    except Exception:  # noqa: BLE001
+        state = {}
+    return (season.resolve_week(state, getattr(args, "week", None)),
+            season.live_week(state))
+
+
+def cmd_lineup(args, cfg):
+    lg = _lg(args, cfg)
+    roster = _roster(args, cfg, lg)
+    week, live = _weeks(args, cfg)
+    db = players.load(offline=args.offline)
+    pos_of = {p: d.get("position") for p, d in db.items()}
+    try:
+        pts, opp = projections.points(lg, f"week:{week}", current_week=live,
+                                      offline=args.offline)
+    except RuntimeError as e:
+        raise SystemExit(f"{e}\n  Run: sleeper refresh projections")
+
+    out = lineup_advice.advise(lg, roster, pts, pos_of, db, week=week)
+    if args.json:
+        return out
+
+    name = out["names"].get
+    print(render.banner())
+    print(f"{lg.name}  |  week {week}  |  "
+          f"projected {out['optimal_total']}  "
+          f"(now {out['current_total']}, {out['gain']:+} available)\n")
+    joining = {s["in"] for s in out["swaps"]}
+    print(render.table(
+        [[slot, name(pid, pid), (db.get(pid) or {}).get("position", ""),
+          (db.get(pid) or {}).get("team", ""), opp.get(pid, "") or "",
+          round(value, 1), "START" if pid in joining else "",
+          (db.get(pid) or {}).get("injury_status") or ""]
+         for slot, pid, value in out["optimal"]["starters"]],
+        ["slot", "player", "pos", "tm", "opp", "pts", "", "inj"]))
+
+    if out["swaps"]:
+        print("\nchanges:")
+        for s in out["swaps"]:
+            leaving = f"OUT {name(s['out'], s['out'])}" if s["out"] else "empty slot"
+            print(f"  {s['slot']:<11} {leaving:<28} "
+                  f"IN {name(s['in'], s['in'])}  {s['gain']:+}")
+    else:
+        print("\nno changes: this is already the best lineup available.")
+
+    if out["optimal"]["unfilled"]:
+        print(f"\n! no eligible player for: {', '.join(out['optimal']['unfilled'])}")
+    for w in out["warnings"]:
+        print(f"! {w['code']} {name(w['player_id'], w['player_id'])}: {w['note']}")
+
+
+def _inseason(args, cfg, *, default_horizon):
+    """Everything the in-season commands share: team, week, points, wire."""
+    lg = _lg(args, cfg)
+    roster = _roster(args, cfg, lg)
+    week, live = _weeks(args, cfg)
+    horizon = getattr(args, "horizon", None) or default_horizon
+    if horizon == "week":
+        horizon = f"week:{week}"
+    db = players.load(offline=args.offline)
+    pos_of = {p: d.get("position") for p, d in db.items()}
+    try:
+        pts, opp = projections.points(lg, horizon, current_week=live,
+                                      offline=args.offline)
+    except RuntimeError as e:
+        raise SystemExit(f"{e}\n  Run: sleeper refresh projections")
+    rostered = league_mod.rostered_players(lg.league_id, offline=args.offline)
+    free = {p for p in pts if p not in rostered and pos_of.get(p)}
+    return lg, roster, week, horizon, db, pos_of, pts, opp, free
+
+
+def cmd_waivers(args, cfg):
+    lg, roster, week, horizon, db, pos_of, pts, _opp, free = _inseason(
+        args, cfg, default_horizon="ros")
+    rows = wire.waiver_targets(lg, roster, pts, pos_of, free, top=args.top)
+    if args.pos:
+        rows = [r for r in rows if r["pos"] == args.pos.upper()]
+    name = lambda pid: (db.get(pid) or {}).get("name", pid)  # noqa: E731
+
+    if args.json:
+        return {"league": lg.name, "week": week, "horizon": horizon,
+                "targets": [{**r, "name": name(r["player_id"]),
+                             "drop_name": (name(r["drop"]["player_id"])
+                                           if r["drop"]["player_id"] else None)}
+                            for r in rows]}
+    print(render.banner())
+    print(f"{lg.name}  |  week {week}  |  horizon {horizon}  |  "
+          f"{len(free)} free agents\n")
+    if not rows:
+        print("nobody on the wire is projected to score in this league.")
+        return
+    if all(r["marginal"] == 0.0 for r in rows):
+        print("nobody on the wire improves your starting lineup. The best")
+        print("available at each position, in case of an injury:\n")
+        best = inseason.best_available(pts, pos_of, free)
+        print(render.table(
+            [[pos, name(pid), round(value, 1)]
+             for pos, (pid, value) in sorted(best.items())],
+            ["pos", "best free agent", "pts"]))
+        return
+    print(render.table(
+        [[i, name(r["player_id"]), r["pos"],
+          (db.get(r["player_id"]) or {}).get("team", ""), r["pts"],
+          f"{r['marginal']:+}", f"{r['over_wire']:+}",
+          name(r["drop"]["player_id"]) if r["drop"]["player_id"] else "-",
+          f"{r['net']:+}",
+          (db.get(r["player_id"]) or {}).get("injury_status") or ""]
+         for i, r in enumerate(rows, 1)],
+        ["#", "player", "pos", "tm", "pts", "adds", "vs wire", "drop", "net",
+         "inj"]))
+    print("\nadds = what he would add to your best lineup. vs wire = how far")
+    print("he is above the best free agent at his position. net = adds - drop.")
+
+
+def cmd_drops(args, cfg):
+    lg, roster, week, horizon, db, pos_of, pts, _opp, free = _inseason(
+        args, cfg, default_horizon="ros")
+    rows = wire.drop_ranking(lg, roster, pts, pos_of, free)[: args.top]
+    name = lambda pid: (db.get(pid) or {}).get("name", pid)  # noqa: E731
+
+    if args.json:
+        return {"league": lg.name, "week": week, "horizon": horizon,
+                "candidates": [{**r, "name": name(r["player_id"])}
+                               for r in rows]}
+    print(render.banner())
+    print(f"{lg.name}  |  week {week}  |  horizon {horizon}  |  "
+          f"safest to drop first\n")
+    print(render.table(
+        [[i, name(r["player_id"]), r["pos"],
+          (db.get(r["player_id"]) or {}).get("team", ""), r["pts"], r["cost"],
+          f"{r['vs_wire']:+}",
+          "BREAKS LINEUP" if r["breaks_lineup"] else
+          ("starter" if r["starting"] else ("IR" if r["reserve"] else "safe")),
+          (db.get(r["player_id"]) or {}).get("injury_status") or ""]
+         for i, r in enumerate(rows, 1)],
+        ["#", "player", "pos", "tm", "pts", "costs", "vs wire", "note", "inj"]))
+    print("\ncosts = points your best lineup loses without him. vs wire = how")
+    print("far he is above the best free agent at his position.")
+
+
+def cmd_survival(args, cfg):
+    lg = _lg(args, cfg)
+    alias = config.resolve_alias(cfg, args.league)
+    elimination = config.elimination_leagues()
+    if alias not in elimination and not args.force:
+        raise SystemExit(
+            f"{lg.name} is not marked as an elimination league.\n"
+            f"  Add SLEEPER_ELIMINATION={alias} to {config.path()}\n"
+            "  or pass --force to see the table anyway.")
+
+    week, live = _weeks(args, cfg)
+    db = players.load(offline=args.offline)
+    pos_of = {p: d.get("position") for p, d in db.items()}
+    try:
+        pts, _opp = projections.points(lg, f"week:{week}", current_week=live,
+                                       offline=args.offline)
+    except RuntimeError as e:
+        raise SystemExit(f"{e}\n  Run: sleeper refresh projections")
+
+    rosters = league_mod.all_rosters(lg.league_id, offline=args.offline)
+    teams = [survival.project_team(lg, r, pts, pos_of) for r in rosters]
+    out = survival.cut_margin(teams, lg.my_roster_id, cut=args.cut)
+
+    names = {}
+    try:
+        for u in api.league_users(lg.league_id, offline=args.offline):
+            names[str(u.get("user_id"))] = (u.get("display_name")
+                                            or u.get("username") or "")
+    except Exception:  # noqa: BLE001 - names are a nicety, not the answer
+        pass
+
+    def team_name(t):
+        return names.get(str(t["owner_id"]), f"roster {t['roster_id']}")
+
+    if args.json:
+        return {"league": lg.name, "week": week, "teams": len(teams),
+                "cut": out["cut"], "my_rank": out["my_rank"],
+                "margin": out["margin"], "at_risk": out["at_risk"],
+                "ranked": [{**t, "name": team_name(t)} for t in out["ranked"]]}
+
+    print(render.banner())
+    cut_note = f"{args.cut} team is cut" if args.cut == 1 else f"{args.cut} teams are cut"
+    print(f"{lg.name}  |  week {week}  |  {len(teams)} teams  |  {cut_note}\n")
+    print(render.table(
+        [[i, "YOU" if t["roster_id"] == lg.my_roster_id else team_name(t),
+          round(t["projected"], 1), t["rule"],
+          f"{t['bench_left']:+}" if t["bench_left"] else "",
+          "CUT" if t["roster_id"] in out["cut"] else ""]
+         for i, t in enumerate(out["ranked"], 1)],
+        ["#", "team", "proj", "from", "on bench", ""]))
+
+    if out["my_rank"] is None:
+        print("\n! I do not know which team is yours, so there is no margin.")
+    elif out["at_risk"]:
+        print(f"\nyou are projected to be cut, {out['gap_to_safety']} points "
+              "below safety.")
+    else:
+        print(f"\nyou are {out['margin']} points above the cut line.")
+    print("! this is a projection, not odds. Expected points is the right goal")
+    print("  while you are comfortable; on the line you want variance, which")
+    print("  this does not model.")
+
+
+def cmd_digest(args, cfg):
+    """The weekly routine: lineup, adds, drops, and the cut line."""
+    lg = _lg(args, cfg)
+    roster = _roster(args, cfg, lg)
+    alias = config.resolve_alias(cfg, args.league)
+    elimination = alias in config.elimination_leagues()
+    week, live = _weeks(args, cfg)
+    db = players.load(offline=args.offline)
+    pos_of = {p: d.get("position") for p, d in db.items()}
+    try:
+        week_pts, opp = projections.points(lg, f"week:{week}", current_week=live,
+                                           offline=args.offline)
+        ros_pts, _ = projections.points(lg, "ros", current_week=live,
+                                        offline=args.offline)
+    except RuntimeError as e:
+        raise SystemExit(f"{e}\n  Run: sleeper refresh projections")
+
+    rostered = league_mod.rostered_players(lg.league_id, offline=args.offline)
+    free = {p for p in ros_pts if p not in rostered and pos_of.get(p)}
+    rosters = (league_mod.all_rosters(lg.league_id, offline=args.offline)
+               if elimination else None)
+
+    out = digest_mod.build(lg, roster, week=week, week_pts=week_pts,
+                           ros_pts=ros_pts, pos_of=pos_of, db=db,
+                           free_ids=free, rosters=rosters,
+                           elimination=elimination, cut=args.cut, top=args.top)
+
+    if not args.no_snapshot:
+        out["snapshot"] = str(digest_mod.snapshot(
+            env.home(), lg.league_id, week,
+            {p: week_pts.get(p, 0.0) for p in rostered}))
+
+    if args.json:
+        return out
+
+    name = lambda pid: (db.get(pid) or {}).get("name", pid)  # noqa: E731
+    ln = out["lineup"]
+    print(render.banner())
+    print(f"{lg.name}  |  week {week}\n")
+
+    print(f"LINEUP   projected {ln['optimal_total']}  "
+          f"(now {ln['current_total']}, {ln['gain']:+} available)")
+    if ln["swaps"]:
+        for sw in ln["swaps"]:
+            leaving = f"OUT {name(sw['out'])}" if sw["out"] else "empty slot"
+            print(f"  {sw['slot']:<11} {leaving:<26} IN {name(sw['in'])}  "
+                  f"{sw['gain']:+}")
+    else:
+        print("  no changes: this is already the best lineup available.")
+    if ln["optimal"]["unfilled"]:
+        print(f"  ! no eligible player for: {', '.join(ln['optimal']['unfilled'])}")
+
+    print("\nADDS     rest of season, by what they add to your lineup")
+    if all(t["marginal"] == 0.0 for t in out["waivers"]):
+        print("  nobody on the wire improves your starting lineup.")
+    else:
+        for t in out["waivers"]:
+            if t["marginal"] > 0:
+                print(f"  {name(t['player_id'])[:24]:<24} {t['pos']:<4} "
+                      f"adds {t['marginal']:+}   drop {name(t['drop']['player_id'])}")
+
+    print("\nDROPS    safest first")
+    for d in out["drops"]:
+        note = ("BREAKS LINEUP" if d["breaks_lineup"] else
+                ("starter" if d["starting"] else "safe"))
+        print(f"  {name(d['player_id'])[:24]:<24} {d['pos']:<4} "
+              f"costs {d['cost']:<6} {note}")
+
+    if out["survival"]:
+        sv = out["survival"]
+        where = (f"projected to be cut, {sv['gap_to_safety']} below safety"
+                 if sv["at_risk"] else
+                 f"{sv['margin']} points above the cut line")
+        print(f"\nCUT LINE rank {sv['my_rank']} of {len(sv['ranked'])}, {where}")
+
+    for w in ln["warnings"]:
+        print(f"! {w['code']} {name(w['player_id'])}: {w['note']}")
+
+
 def cmd_board(args, cfg):
     lg = _lg(args, cfg)
     rows, meta = board_mod.build(lg, offline=args.offline)
@@ -306,6 +609,30 @@ def main(argv=None):
     s.add_argument("what", nargs="?", choices=["players", "projections", "all"])
     s = sub.add_parser("player", parents=[common])
     s.add_argument("name"); s.add_argument("--league")
+    s = sub.add_parser("lineup", parents=[common])
+    s.add_argument("league", nargs="?")
+    s.add_argument("--week", type=int, help="default: the live week")
+    s.add_argument("--roster-id", type=int, dest="roster_id")
+    s = sub.add_parser("waivers", parents=[common])
+    s.add_argument("league", nargs="?")
+    s.add_argument("--week", type=int); s.add_argument("--top", type=int, default=10)
+    s.add_argument("--pos"); s.add_argument("--horizon", choices=["ros", "week"])
+    s.add_argument("--roster-id", type=int, dest="roster_id")
+    s = sub.add_parser("drops", parents=[common])
+    s.add_argument("league", nargs="?")
+    s.add_argument("--week", type=int); s.add_argument("--top", type=int, default=8)
+    s.add_argument("--horizon", choices=["ros", "week"])
+    s.add_argument("--roster-id", type=int, dest="roster_id")
+    s = sub.add_parser("survival", parents=[common])
+    s.add_argument("league", nargs="?")
+    s.add_argument("--week", type=int); s.add_argument("--cut", type=int, default=1)
+    s.add_argument("--force", action="store_true")
+    s = sub.add_parser("digest", parents=[common])
+    s.add_argument("league", nargs="?")
+    s.add_argument("--week", type=int); s.add_argument("--top", type=int, default=5)
+    s.add_argument("--cut", type=int, default=1)
+    s.add_argument("--roster-id", type=int, dest="roster_id")
+    s.add_argument("--no-snapshot", action="store_true")
     s = sub.add_parser("board", parents=[common])
     s.add_argument("league", nargs="?"); s.add_argument("--pos")
     s.add_argument("--top", type=int, default=40)
@@ -325,7 +652,9 @@ def main(argv=None):
 
     args = ap.parse_args(argv)
     cfg = config.load()
-    fn = {"leagues": cmd_leagues, "env": cmd_env,
+    fn = {"leagues": cmd_leagues, "env": cmd_env, "lineup": cmd_lineup,
+          "waivers": cmd_waivers, "drops": cmd_drops, "survival": cmd_survival,
+          "digest": cmd_digest,
           "show": cmd_league_show, "refresh": cmd_refresh,
           "player": cmd_player, "board": cmd_board, "draft": cmd_draft,
           "live": cmd_live}[args.cmd]

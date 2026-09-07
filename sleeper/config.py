@@ -52,6 +52,20 @@ def require_username(cfg: dict) -> str:
     return name
 
 
+def parse_alias_list(raw) -> set:
+    """A comma separated list of league aliases."""
+    return {part.strip() for part in (raw or "").split(",") if part.strip()}
+
+
+def elimination_leagues() -> set:
+    """Leagues that cut a team every week.
+
+    Nothing in a Sleeper payload reliably says so, so it is configured rather
+    than guessed: SLEEPER_ELIMINATION=guillotine
+    """
+    return parse_alias_list(env.get("SLEEPER_ELIMINATION"))
+
+
 def notes_path() -> Path:
     """Optional file of personal, league-specific notes. Never in this repo."""
     raw = env.get("SLEEPER_NOTES")

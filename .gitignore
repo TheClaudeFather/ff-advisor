@@ -11,3 +11,6 @@ notes.md
 
 # Personal working material.
 Research/
+
+# Worktrees created by the harness live inside the repo.
+.claude/worktrees/

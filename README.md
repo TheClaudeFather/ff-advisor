@@ -44,6 +44,7 @@ this repository. See `.env.example` for the full list of keys, and run
 | `SLEEPER_SLOTS` | `alias:slot` pairs, your draft position per league |
 | `SLEEPER_HOME` | where the cache, .env, and notes live, default `~/.sleeper` |
 | `SLEEPER_NOTES` | private league notes the skill reads, default `$SLEEPER_HOME/notes.md` |
+| `SLEEPER_ELIMINATION` | aliases of leagues that cut a team every week |
 
 ## Usage
 
@@ -58,7 +59,17 @@ sleeper board <league> --top 40         # ranked draft board
 sleeper draft prep <league> --slot N     # run before the draft
 sleeper draft advise <league> --slot N   # one shot, under 0.5s
 sleeper live <league>                   # second terminal panel
+
+sleeper lineup <league>                 # start/sit: changes, by slot
+sleeper waivers <league> --top 10       # who to add, ranked by what they add
+sleeper drops <league>                  # who to drop, safest first
+sleeper survival <league>               # elimination leagues: distance to the cut
+sleeper digest <league>                 # all of the above, one weekly report
 ```
+
+The in-season commands rank by what a player does to your own starting lineup,
+not by his raw points, so a strong player at a position you are already full at
+correctly scores zero.
 
 Global flags: `--json`, `--offline`, `--refresh`, `--season`.
 
@@ -113,7 +124,8 @@ The same quarterback, with the same projection, in two leagues:
 - ADP is national and a weak prior in a small friends league.
 - Projection quality is the ceiling. This is a scarcity and roster-need engine,
   not an oracle.
-- Start/sit, waiver, and drop advice is not built yet.
+- Bye weeks are not modelled: the rest-of-season horizon scales the season
+  projection by the weeks remaining and does not know who still has a bye.
 
 ## Tests
 

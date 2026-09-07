@@ -56,7 +56,7 @@ def load(league_id, *, user_id=None, **kw) -> League:
     )
     if user_id:
         for r in api.rosters(league_id, **kw):
-            if r.get("owner_id") == str(user_id):
+            if owns(r, user_id):
                 lg.my_roster_id = r["roster_id"]
                 break
     return lg
@@ -74,3 +74,109 @@ def rostered_players(league_id, **kw) -> set:
     for r in api.rosters(league_id, **kw):
         out |= set(r.get("players") or [])
     return out
+
+
+EMPTY_SLOT = "0"
+
+
+@dataclass
+class Roster:
+    """A team as Sleeper stores it.
+
+    `starters` is positional against roster_positions and uses "0" for a slot
+    nobody is in, so it is filtered here rather than at every call site.
+    """
+    roster_id: int
+    owner_id: str | None
+    players: list
+    starters: list          # who is starting, placeholders removed
+    slots: list             # the raw positional list, "0" for an empty slot
+    reserve: list
+    taxi: list
+
+    @property
+    def set_lineup(self) -> bool:
+        """Has this team actually put anyone in a slot?
+
+        Early in the week most of a league has not, which is why opponent
+        projections fall back to the best lineup a team could field.
+        """
+        return bool(self.starters)
+
+    @property
+    def bench(self) -> list:
+        return [p for p in self.players if p not in set(self.starters)]
+
+    @property
+    def active(self) -> list:
+        """Everyone who may be put in a starting slot.
+
+        `players` includes injured reserve and taxi. Handing that list to the
+        lineup optimizer would happily start a player on IR.
+        """
+        out = set(self.reserve) | set(self.taxi)
+        return [p for p in self.players if p not in out]
+
+
+def owns(raw_roster: dict, user_id) -> bool:
+    """Does this user manage this team?
+
+    Sleeper names only one manager in owner_id, so a co-owned team resolved to
+    no roster at all and every command would report that it cannot find your
+    team.
+    """
+    if not user_id:
+        return False
+    uid = str(user_id)
+    if str(raw_roster.get("owner_id")) == uid:
+        return True
+    return uid in {str(c) for c in (raw_roster.get("co_owners") or [])}
+
+
+def _roster(raw: dict) -> Roster:
+    slots = list(raw.get("starters") or [])
+    return Roster(
+        roster_id=raw.get("roster_id"),
+        owner_id=raw.get("owner_id"),
+        players=list(raw.get("players") or []),
+        starters=[p for p in slots if p and p != EMPTY_SLOT],
+        slots=slots,
+        reserve=list(raw.get("reserve") or []),
+        taxi=list(raw.get("taxi") or []),
+    )
+
+
+def current_starters(lg, roster) -> list:
+    """[(slot, player_id or None)] for the lineup as it stands.
+
+    Sleeper stores `starters` positionally against roster_positions, with "0"
+    for a slot nobody is in, so the slot a player occupies is knowable and a
+    recommendation can name it. A payload of the wrong length is not zipped
+    blind: the extra slots come back empty rather than silently shifting every
+    player one place.
+    """
+    out = []
+    for i, slot in enumerate(lg.starter_slots):
+        pid = roster.slots[i] if i < len(roster.slots) else None
+        out.append((slot, pid if pid and pid != EMPTY_SLOT else None))
+    return out
+
+
+def rosters_from(raw_rosters) -> list:
+    """Parse the rosters payload. Pure, so it tests without the network."""
+    return [_roster(r) for r in (raw_rosters or [])]
+
+
+def pick_roster(rosters, roster_id):
+    return next((r for r in rosters if r.roster_id == roster_id), None)
+
+
+def all_rosters(league_id, **kw) -> list:
+    return rosters_from(api.rosters(league_id, **kw))
+
+
+def roster_of(league_id, roster_id, **kw):
+    """One team, or None when the roster_id is unknown."""
+    if roster_id is None:
+        return None
+    return pick_roster(all_rosters(league_id, **kw), roster_id)

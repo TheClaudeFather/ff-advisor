@@ -4,13 +4,20 @@ from __future__ import annotations
 from .. import players, projections, valuation
 
 
-def build(lg, *, horizon="season", offline=False):
-    """-> (rows, meta). rows: list of dicts sorted by VOR desc."""
+def build(lg, *, horizon="season", current_week=1, offline=False):
+    """-> (rows, meta). rows: list of dicts sorted by VOR desc.
+
+    horizon is "season", "week:N", or "ros". Points come from the horizon;
+    average draft position and the blind-spot report always come from the
+    season feed, because weekly feeds carry no ADP and "ros" has no single
+    feed to read either from.
+    """
     db = players.load(offline=offline)
     pos_of = {p: d.get("position") for p, d in db.items()}
 
-    raw = projections.raw(lg.season, horizon, offline=offline)
-    pts, _opp = projections.points(lg, horizon, offline=offline)
+    raw = projections.raw(lg.season, "season", offline=offline)
+    pts, _opp = projections.points(lg, horizon, current_week=current_week,
+                                   offline=offline)
     # Sleeper publishes a separate average draft position for two-quarterback
     # formats. In a SUPER_FLEX league every team wants two quarterbacks, so
     # quarterbacks go far earlier than the one-quarterback number implies, and
