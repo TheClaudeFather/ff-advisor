@@ -1,0 +1,4 @@
+# Every change needs review from the repository owner before it can merge.
+# Enforced by the "main protection" ruleset, which requires one approving
+# review from a code owner.
+*       @TheClaudeFather
