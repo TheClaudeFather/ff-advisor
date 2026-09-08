@@ -10,7 +10,7 @@ from . import (api, cache, config, draft as draft_mod, env,
                league as league_mod, match, players, projections, render,
                season)
 from .advice import digest as digest_mod
-from .advice import inseason, lineup_advice, survival, wire
+from .advice import inseason, lineup_advice, planner, survival, wire
 from .advice import board as board_mod
 from .advice import draft_advice
 
@@ -475,6 +475,57 @@ def cmd_digest(args, cfg):
         print(f"! {w['code']} {name(w['player_id'])}: {w['note']}")
 
 
+def cmd_byes(args, cfg):
+    """The weeks ahead where a starting slot has nobody who plays."""
+    lg = _lg(args, cfg)
+    roster = _roster(args, cfg, lg)
+    week, live = _weeks(args, cfg)
+    db = players.load(offline=args.offline)
+    pos_of = {p: d.get("position") for p, d in db.items()}
+    team_of = {p: d.get("team") for p, d in db.items()}
+
+    byes = planner.bye_weeks(api.schedule(lg.season, offline=args.offline))
+    weekly = {}
+    last = min(season.LAST_WEEK, week + args.weeks - 1)
+    for wk in range(week, last + 1):
+        try:
+            pts, _opp = projections.points(lg, f"week:{wk}", current_week=live,
+                                           offline=args.offline)
+        except RuntimeError:
+            continue  # that week is not published or not cached
+        weekly[wk] = pts
+
+    if not weekly:
+        raise SystemExit("no weekly projections available for those weeks.")
+
+    rows = planner.outlook(lg, roster, weekly, pos_of, byes, team_of)
+    name = lambda pid: (db.get(pid) or {}).get("name", pid)  # noqa: E731
+
+    if args.json:
+        return {"league": lg.name, "from_week": week,
+                "weeks": [{**r, "on_bye_names": [name(p) for p in r["on_bye"]]}
+                          for r in rows]}
+
+    print(render.banner())
+    print(f"{lg.name}  |  weeks {min(weekly)} to {max(weekly)}\n")
+    print(render.table(
+        [[r["week"], r["total"],
+          ", ".join(f"{slot}: {name(pid)}" for slot, pid in r["hollow"]) or "",
+          ", ".join(r["unfilled"]) or "",
+          ", ".join(name(p) for p in r["on_bye"]) or ""]
+         for r in rows],
+        ["week", "proj", "slot filled by a bye", "nobody eligible", "on bye"]))
+
+    hurt = [p for p in roster.players
+            if (db.get(p) or {}).get("injury_status")]
+    if hurt:
+        print("\ninjuries on this roster:")
+        for pid in hurt:
+            print(f"  {name(pid):<24} {(db.get(pid) or {}).get('injury_status')}")
+    print("\nA slot filled by a bye scores zero. Cover it before the week it")
+    print("lands, not during it.")
+
+
 def cmd_board(args, cfg):
     lg = _lg(args, cfg)
     rows, meta = board_mod.build(lg, offline=args.offline)
@@ -643,6 +694,10 @@ def main(argv=None):
     s.add_argument("--cut", type=int, default=1)
     s.add_argument("--roster-id", type=int, dest="roster_id")
     s.add_argument("--no-snapshot", action="store_true")
+    s = sub.add_parser("byes", parents=[common])
+    s.add_argument("league", nargs="?")
+    s.add_argument("--week", type=int); s.add_argument("--weeks", type=int, default=4)
+    s.add_argument("--roster-id", type=int, dest="roster_id")
     s = sub.add_parser("board", parents=[common])
     s.add_argument("league", nargs="?"); s.add_argument("--pos")
     s.add_argument("--top", type=int, default=40)
@@ -664,7 +719,7 @@ def main(argv=None):
     cfg = config.load()
     fn = {"leagues": cmd_leagues, "env": cmd_env, "lineup": cmd_lineup,
           "waivers": cmd_waivers, "drops": cmd_drops, "survival": cmd_survival,
-          "digest": cmd_digest,
+          "digest": cmd_digest, "byes": cmd_byes,
           "show": cmd_league_show, "refresh": cmd_refresh,
           "player": cmd_player, "board": cmd_board, "draft": cmd_draft,
           "live": cmd_live}[args.cmd]

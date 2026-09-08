@@ -90,6 +90,16 @@ def draft_picks(draft_id):
     return picks, 0.0
 
 
+def schedule(season, season_type="regular", **kw):
+    """The season's games. 27KB, and the only place a bye week is knowable.
+
+    Sleeper's player payload carries no usable bye_week, but a team with no
+    game in a week is on bye, and this endpoint says so exactly.
+    """
+    return cache.get_json("meta", f"schedule_{season}_{season_type}",
+                          f"{BASE}/schedule/nfl/{season_type}/{season}", DAY, **kw)
+
+
 def players_raw(**kw):
     """~14MB. Callers should use players.load() which reads the slim file."""
     return cache.get_json("players", "nfl", f"{BASE}/v1/players/nfl", DAY, **kw)
