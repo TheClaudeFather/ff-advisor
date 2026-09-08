@@ -116,6 +116,8 @@ def stats_week(season, week, **kw):
 
 
 def trending(kind="add", hours=24, limit=50, **kw):
-    return cache.get_json("meta", f"trending_{kind}_{hours}",
+    # The limit belongs in the key: without it a call for 200 players was
+    # served the cached answer for 50.
+    return cache.get_json("meta", f"trending_{kind}_{hours}_{limit}",
                           f"{BASE}/v1/players/nfl/trending/{kind}"
                           f"?lookback_hours={hours}&limit={limit}", 1800, **kw)

@@ -17,7 +17,12 @@ from .advice import draft_advice
 
 def _lg(args, cfg):
     lid = config.resolve_league(cfg, getattr(args, "league", None))
-    return league_mod.load(lid, user_id=cfg.get("user_id"), offline=args.offline)
+    # --refresh has to reach here: rosters are cached for an hour, which
+    # in-season is the difference between advising on a player you still have
+    # and one you dropped this morning.
+    return league_mod.load(lid, user_id=cfg.get("user_id"),
+                           offline=args.offline,
+                           refresh=getattr(args, "refresh", False))
 
 
 def _slot(args, cfg):
@@ -173,7 +178,8 @@ def _roster(args, cfg, lg):
             f"I do not know which team is yours in {lg.name}.\n"
             "  Run: sleeper leagues   (it stores your user id)\n"
             "  or pass --roster-id N")
-    roster = league_mod.roster_of(lg.league_id, roster_id, offline=args.offline)
+    roster = league_mod.roster_of(lg.league_id, roster_id,
+                                  offline=args.offline, refresh=args.refresh)
     if roster is None:
         raise SystemExit(f"no roster {roster_id} in {lg.name}")
     return roster
@@ -249,7 +255,8 @@ def _inseason(args, cfg, *, default_horizon):
                                       offline=args.offline)
     except RuntimeError as e:
         raise SystemExit(f"{e}\n  Run: sleeper refresh projections")
-    rostered = league_mod.rostered_players(lg.league_id, offline=args.offline)
+    rostered = league_mod.rostered_players(lg.league_id, offline=args.offline,
+                                           refresh=args.refresh)
     free = {p for p in pts if p not in rostered and pos_of.get(p)}
     return lg, roster, week, horizon, db, pos_of, pts, opp, free
 
@@ -342,7 +349,8 @@ def cmd_survival(args, cfg):
     except RuntimeError as e:
         raise SystemExit(f"{e}\n  Run: sleeper refresh projections")
 
-    rosters = league_mod.all_rosters(lg.league_id, offline=args.offline)
+    rosters = league_mod.all_rosters(lg.league_id, offline=args.offline,
+                                     refresh=args.refresh)
     teams = [survival.project_team(lg, r, pts, pos_of) for r in rosters]
     out = survival.cut_margin(teams, lg.my_roster_id, cut=args.cut)
 
@@ -403,9 +411,11 @@ def cmd_digest(args, cfg):
     except RuntimeError as e:
         raise SystemExit(f"{e}\n  Run: sleeper refresh projections")
 
-    rostered = league_mod.rostered_players(lg.league_id, offline=args.offline)
+    rostered = league_mod.rostered_players(lg.league_id, offline=args.offline,
+                                           refresh=args.refresh)
     free = {p for p in ros_pts if p not in rostered and pos_of.get(p)}
-    rosters = (league_mod.all_rosters(lg.league_id, offline=args.offline)
+    rosters = (league_mod.all_rosters(lg.league_id, offline=args.offline,
+                                      refresh=args.refresh)
                if elimination else None)
 
     out = digest_mod.build(lg, roster, week=week, week_pts=week_pts,

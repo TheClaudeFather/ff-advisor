@@ -4,21 +4,24 @@ from __future__ import annotations
 from . import cache, players
 
 
+def _newest_projection_age():
+    """How old the freshest projection feed is, or None if none is cached."""
+    directory = cache.ROOT / "proj"
+    if not directory.exists():
+        return None
+    ages = []
+    for meta in directory.glob("*.meta.json"):
+        age = cache.age("proj", meta.name[: -len(".meta.json")])
+        if age is not None:
+            ages.append(age)
+    return min(ages) if ages else None
+
+
 def banner(*, picks_age=None) -> str:
     bits = [f"players {cache.human_age(players.age_seconds())}"]
-    for ns, key, label in [("proj", None, "proj")]:
-        pass
-    import glob, os
-    pdir = cache.ROOT / "proj"
-    if pdir.exists():
-        newest = None
-        for f in glob.glob(str(pdir / "*.meta.json")):
-            k = os.path.basename(f)[:-10]
-            a = cache.age("proj", k)
-            if a is not None and (newest is None or a < newest):
-                newest = a
-        if newest is not None:
-            bits.append(f"proj {cache.human_age(newest)}")
+    newest = _newest_projection_age()
+    if newest is not None:
+        bits.append(f"proj {cache.human_age(newest)}")
     if picks_age is not None:
         bits.append(f"picks live {picks_age:.1f}s")
     return "· " + " · ".join(bits)
