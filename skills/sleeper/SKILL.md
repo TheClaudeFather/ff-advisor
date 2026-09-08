@@ -62,6 +62,8 @@ strategy. This file lives outside the plugin and is never published.
 | am I getting cut this week | `survival <league>` (elimination leagues only) |
 | what should I do this week | `digest <league>` (all of the above, one report) |
 | what is coming up, byes, injuries | `byes <league> [--weeks 4]` |
+| how good were the projections | `accuracy <league> [--week N]` |
+| how good were the projections | `accuracy <league> [--week N]` |
 
 ## Naming a league
 
@@ -108,6 +110,20 @@ which is the honest answer to "who should I pick up" when nobody helps.
 Tuesday or a Sunday morning. It also writes a snapshot of what was projected
 for every rostered player, which is what makes grading the projections possible
 later, so prefer it over running the commands separately.
+
+`accuracy` grades a played week against the snapshot `digest` wrote before it,
+scoring both sides in the league's own settings. Report the bias as well as the
+average miss: a bias that is consistently positive means the projections run
+high for that position, which is something the user can act on. It refuses to
+grade a week that has not been played, because Sleeper publishes a stats feed
+of zeros for a future week.
+
+`accuracy` grades a played week against the snapshot `digest` wrote before it,
+scoring both sides in the league's own settings. Report the bias as well as the
+average miss: a bias that stays positive means the projections run high for that
+position, which is something the user can act on. It refuses to grade a week
+that has not been played, because Sleeper publishes a stats feed of zeros for a
+future week.
 
 `byes` looks ahead and reports two different problems. A slot listed under
 "nobody eligible" has no player on the roster who can fill it, so one must be

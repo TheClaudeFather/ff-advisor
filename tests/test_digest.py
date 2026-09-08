@@ -82,3 +82,18 @@ def test_snapshots_of_different_weeks_do_not_collide(tmp_path):
     a = snapshot(tmp_path, "77", 3, {"qb1": 20.0})
     b = snapshot(tmp_path, "77", 4, {"qb1": 18.0})
     assert a != b and a.exists() and b.exists()
+
+
+def test_a_snapshot_records_both_lineups(tmp_path):
+    """Grading the tool later needs what was set and what was recommended, not
+    only what was projected. Neither survives the week anywhere else."""
+    path = snapshot(tmp_path, "77", 3, {"qb1": 20.0},
+                    set_ids=["qb1", "rb2"], recommended_ids=["qb1", "rb1"])
+    saved = json.loads(path.read_text())
+    assert saved["set"] == ["qb1", "rb2"]
+    assert saved["recommended"] == ["qb1", "rb1"]
+
+
+def test_a_snapshot_without_lineups_still_records_the_projection(tmp_path):
+    saved = json.loads(snapshot(tmp_path, "77", 3, {"qb1": 20.0}).read_text())
+    assert saved["set"] is None and saved["recommended"] is None

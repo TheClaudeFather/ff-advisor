@@ -8,9 +8,9 @@ import time
 
 from . import (api, cache, config, draft as draft_mod, env,
                league as league_mod, match, players, projections, render,
-               season)
+               scoring, season)
 from .advice import digest as digest_mod
-from .advice import inseason, lineup_advice, planner, survival, wire
+from .advice import accuracy, inseason, lineup_advice, planner, survival, wire
 from .advice import board as board_mod
 from .advice import draft_advice
 
@@ -426,7 +426,11 @@ def cmd_digest(args, cfg):
     if not args.no_snapshot:
         out["snapshot"] = str(digest_mod.snapshot(
             env.home(), lg.league_id, week,
-            {p: week_pts.get(p, 0.0) for p in rostered}))
+            {p: week_pts.get(p, 0.0) for p in rostered},
+            set_ids=[p for _slot, p in league_mod.current_starters(lg, roster)
+                     if p],
+            recommended_ids=[pid for _slot, pid, _v
+                             in out["lineup"]["optimal"]["starters"]]))
 
     if args.json:
         return out
@@ -524,6 +528,120 @@ def cmd_byes(args, cfg):
             print(f"  {name(pid):<24} {(db.get(pid) or {}).get('injury_status')}")
     print("\nA slot filled by a bye scores zero. Cover it before the week it")
     print("lands, not during it.")
+
+
+def _grade_week(lg, week, pos_of, *, offline=False):
+    """One week graded, or None when there is no snapshot of it."""
+    path = env.home() / "snapshots" / f"{lg.league_id}_week{week}.json"
+    if not path.exists():
+        return None
+    saved = jsonlib.loads(path.read_text())
+    records = api.stats_week(lg.season, week, offline=offline)
+
+    actual = {}
+    for r in records:
+        pid = r.get("player_id")
+        pos = (r.get("player") or {}).get("position") or pos_of.get(pid)
+        if pid and pos:
+            actual[pid] = scoring.score_player(r.get("stats") or {},
+                                               lg.scoring, pos)
+    return accuracy.grade(saved["points"], actual, pos_of, week=week,
+                          set_ids=saved.get("set"),
+                          recommended_ids=saved.get("recommended"))
+
+
+def cmd_accuracy(args, cfg):
+    """Grade a week against what happened, or the record so far."""
+    lg = _lg(args, cfg)
+    _advice_week, live = _weeks(args, cfg)
+    db = players.load(offline=args.offline)
+    pos_of = {p: d.get("position") for p, d in db.items()}
+
+    if args.through:
+        weeks = []
+        for wk in range(1, args.through + 1):
+            try:
+                graded = _grade_week(lg, wk, pos_of, offline=args.offline)
+            except RuntimeError:
+                continue
+            if graded:
+                weeks.append(graded)
+        record = accuracy.combine(weeks)
+        if args.json:
+            return {"league": lg.name, **record}
+        print(render.banner())
+        covered = ", ".join(str(w) for w in record["weeks"]) or "none"
+        print(f"{lg.name}  |  weeks graded: {covered}\n")
+        if not record["weeks"]:
+            print("no played week has a snapshot yet. `sleeper digest` writes")
+            print("one before kickoff; without it a week cannot be graded.")
+            return
+        o = record["overall"]
+        print(f"  average miss {o['mae']}   bias {o['bias']:+}   "
+              f"{o['n']} player weeks\n")
+        print(render.table(
+            [[pos, v["n"], v["mae"], f"{v['bias']:+}"]
+             for pos, v in record["by_pos"].items()],
+            ["pos", "n", "avg miss", "bias"]))
+        d = record["decisions"]
+        if d["weeks"]:
+            print(f"\nadvice: helped {d['helped']} of {d['weeks']} weeks, "
+                  f"{d['total_delta']:+} points in total")
+        else:
+            print("\nadvice: no week yet where a change was recommended.")
+        print("\nA single week is noise. Read the record, and remember that a")
+        print("lineup edge smaller than the average miss is inside the error.")
+        return
+
+    week = args.week or max(1, live - 1)   # default: the week just played
+    try:
+        out = _grade_week(lg, week, pos_of, offline=args.offline)
+    except RuntimeError as e:
+        raise SystemExit(str(e))
+    if out is None:
+        raise SystemExit(
+            f"no snapshot of week {week} for {lg.name}.\n"
+            "  Snapshots are written by `sleeper digest`, before the week is\n"
+            "  played. Nothing else preserves what was projected at the time.")
+
+    if args.json:
+        return {"league": lg.name, **out, "worst": out["worst"][: args.top]}
+
+    if not out["played"]:
+        raise SystemExit(
+            f"week {week} has not been played: every player scored zero.\n"
+            "  Sleeper publishes a stats feed for a future week with all its\n"
+            "  values at zero, so grading it would measure nothing.")
+
+    def name(pid):
+        return (db.get(pid) or {}).get("name", pid)
+
+    print(render.banner())
+    o = out["overall"]
+    print(f"{lg.name}  |  week {week}  |  {o['n']} rostered players graded\n")
+    ran = "projections ran high" if o["bias"] > 0 else "projections ran low"
+    print(f"  average miss {o['mae']}   bias {o['bias']:+} ({ran})\n")
+    print(render.table(
+        [[pos, v["n"], v["mae"], f"{v['bias']:+}"]
+         for pos, v in out["by_pos"].items()],
+        ["pos", "n", "avg miss", "bias"]))
+    print("\nbiggest misses:")
+    for r in out["worst"][: args.top]:
+        print(f"  {name(r['player_id'])[:24]:<24} {r['pos']:<4} "
+              f"projected {r['projected']:>6}  actual {r['actual']:>6}  "
+              f"{r['error']:+}")
+    d = out.get("decision")
+    if d and d["helped"] is not None:
+        verdict = "helped" if d["helped"] else "cost you"
+        print(f"\nadvice {verdict} {abs(d['delta'])} points: "
+              f"you set {d['set']}, the recommended lineup scored "
+              f"{d['recommended']}")
+    elif d:
+        print(f"\nadvice recommended no change; the lineup scored {d['set']}")
+
+    if out["n_no_actual"]:
+        print(f"\n! {out['n_no_actual']} players have no result in the stats "
+              "feed and were graded as zero.")
 
 
 def cmd_board(args, cfg):
@@ -698,6 +816,12 @@ def main(argv=None):
     s.add_argument("league", nargs="?")
     s.add_argument("--week", type=int); s.add_argument("--weeks", type=int, default=4)
     s.add_argument("--roster-id", type=int, dest="roster_id")
+    s = sub.add_parser("accuracy", parents=[common])
+    s.add_argument("league", nargs="?")
+    s.add_argument("--week", type=int)
+    s.add_argument("--through", type=int, metavar="WEEK",
+                   help="grade every week up to this one, as a record")
+    s.add_argument("--top", type=int, default=8)
     s = sub.add_parser("board", parents=[common])
     s.add_argument("league", nargs="?"); s.add_argument("--pos")
     s.add_argument("--top", type=int, default=40)
@@ -719,7 +843,7 @@ def main(argv=None):
     cfg = config.load()
     fn = {"leagues": cmd_leagues, "env": cmd_env, "lineup": cmd_lineup,
           "waivers": cmd_waivers, "drops": cmd_drops, "survival": cmd_survival,
-          "digest": cmd_digest, "byes": cmd_byes,
+          "digest": cmd_digest, "byes": cmd_byes, "accuracy": cmd_accuracy,
           "show": cmd_league_show, "refresh": cmd_refresh,
           "player": cmd_player, "board": cmd_board, "draft": cmd_draft,
           "live": cmd_live}[args.cmd]

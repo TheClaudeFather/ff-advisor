@@ -39,8 +39,45 @@ def raw(season, horizon, *, current_week=1, **kw):
 
 
 def ros_share(current_week: int) -> float:
-    """The fraction of the season still to be played, counting this week."""
+    """The fraction of the season still to be played, counting this week.
+
+    Used only when a player's team is unknown. Prefer remaining_share, which
+    counts games rather than weeks.
+    """
     return max(0.0, (LAST_WEEK - current_week + 1) / LAST_WEEK)
+
+
+def remaining_share(games, current_week: int, *, last_week=LAST_WEEK) -> dict:
+    """{team: fraction of its games still to play}.
+
+    Weeks and games are not the same thing once byes start. A player whose bye
+    has passed has more football left than one whose bye is ahead, and a flat
+    weekly scale credits them equally.
+    """
+    played, left = {}, {}
+    for g in games:
+        week = g.get("week")
+        if week is None or week > last_week:
+            continue
+        for team in {g.get("home"), g.get("away")} - {None}:
+            played[team] = played.get(team, 0) + 1
+            if week >= current_week:
+                left[team] = left.get(team, 0) + 1
+    return {team: (left.get(team, 0) / total if total else 0.0)
+            for team, total in played.items()}
+
+
+def scale_to_remaining(season_points: dict, team_of: dict, games,
+                       current_week: int, *, last_week=LAST_WEEK) -> dict:
+    """Season points -> what is left, team by team.
+
+    A player whose team is not in the schedule falls back to the flat weekly
+    share, which is wrong by a few percent rather than wrong by a whole season.
+    """
+    share = remaining_share(games, current_week, last_week=last_week)
+    flat = max(0.0, (last_week - current_week + 1) / last_week)
+    return {pid: value * share.get(team_of.get(pid), flat)
+            for pid, value in season_points.items()}
 
 
 def points(lg, horizon, *, current_week=1, **kw) -> tuple[dict, dict]:
@@ -59,9 +96,20 @@ def points(lg, horizon, *, current_week=1, **kw) -> tuple[dict, dict]:
     """
     sc = lg.scoring
     if horizon == "ros":
-        season_pts, _ = points(lg, "season", current_week=current_week, **kw)
-        share = ros_share(current_week)
-        return {p: v * share for p, v in season_pts.items()}, {}
+        records = raw(lg.season, "season", current_week=current_week, **kw)
+        idx = _index(records)
+        season_pts = {pid: scoring.score_player(stats, sc, pos)
+                      for pid, (stats, pos, _o) in idx.items()}
+        team_of = {r.get("player_id"): (r.get("player") or {}).get("team")
+                   for r in records}
+        try:
+            games = api.schedule(lg.season, **kw)
+        except Exception:  # noqa: BLE001 - a flat scale beats no answer
+            games = []
+        if not games:
+            share = ros_share(current_week)
+            return {p: v * share for p, v in season_pts.items()}, {}
+        return scale_to_remaining(season_pts, team_of, games, current_week), {}
 
     idx = _index(raw(lg.season, horizon, current_week=current_week, **kw))
     pts = {pid: scoring.score_player(stats, sc, pos) for pid, (stats, pos, _o) in idx.items()}
