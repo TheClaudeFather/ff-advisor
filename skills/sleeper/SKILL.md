@@ -61,6 +61,7 @@ strategy. This file lives outside the plugin and is never published.
 | who should I drop | `drops <league>` |
 | am I getting cut this week | `survival <league>` (elimination leagues only) |
 | what should I do this week | `digest <league>` (all of the above, one report) |
+| what is coming up, byes, injuries | `byes <league> [--weeks 4]` |
 
 ## Naming a league
 
@@ -107,6 +108,14 @@ which is the honest answer to "who should I pick up" when nobody helps.
 Tuesday or a Sunday morning. It also writes a snapshot of what was projected
 for every rostered player, which is what makes grading the projections possible
 later, so prefer it over running the commands separately.
+
+`byes` looks ahead and reports two different problems. A slot listed under
+"nobody eligible" has no player on the roster who can fill it, so one must be
+added. A slot listed under "slot filled by a bye" is worse in practice: it looks
+filled and scores zero, because the only eligible player is not playing that
+week. Byes are derived rather than read, because Sleeper publishes no usable
+bye week field, so a team is treated as on bye when its whole roster projects
+under a point that week.
 
 `survival` ranks every team in an elimination league by projected points and
 reports the distance to the cut line. It is a margin, not odds: Sleeper

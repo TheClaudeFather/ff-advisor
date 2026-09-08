@@ -124,8 +124,9 @@ The same quarterback, with the same projection, in two leagues:
 - ADP is national and a weak prior in a small friends league.
 - Projection quality is the ceiling. This is a scarcity and roster-need engine,
   not an oracle.
-- Bye weeks are not modelled: the rest-of-season horizon scales the season
-  projection by the weeks remaining and does not know who still has a bye.
+- The rest-of-season horizon scales the season projection by the weeks
+  remaining and does not subtract a bye that is still ahead. `sleeper byes`
+  reports byes separately.
 
 ## Tests
 
