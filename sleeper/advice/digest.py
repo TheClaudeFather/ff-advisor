@@ -39,12 +39,15 @@ def build(lg, roster, *, week, week_pts, ros_pts, pos_of, db, free_ids,
     }
 
 
-def snapshot(home: Path, league_id: str, week: int, points: dict) -> Path:
-    """Record what was projected, before the week is played.
+def snapshot(home: Path, league_id: str, week: int, points: dict, *,
+             set_ids=None, recommended_ids=None) -> Path:
+    """Record what was projected and both lineups, before the week is played.
 
-    No cache preserves this: a weekly feed is overwritten as it is revised, and
-    once the games are done the projection is gone. Grading the numbers later
-    needs what the tool actually believed at the time.
+    No cache preserves any of it. A weekly feed is overwritten as it is
+    revised, the lineup that was set is replaced the moment it is changed, and
+    once the games are done the projection is gone. Grading the projections
+    later needs what the tool believed; grading the advice needs what was set
+    against what was recommended.
     """
     directory = Path(home) / "snapshots"
     directory.mkdir(parents=True, exist_ok=True)
@@ -54,5 +57,8 @@ def snapshot(home: Path, league_id: str, week: int, points: dict) -> Path:
         "week": week,
         "taken_at": time.time(),
         "points": {p: round(v, 3) for p, v in points.items()},
+        "set": list(set_ids) if set_ids is not None else None,
+        "recommended": list(recommended_ids) if recommended_ids is not None
+        else None,
     }))
     return path
