@@ -65,6 +65,8 @@ sleeper waivers <league> --top 10       # who to add, ranked by what they add
 sleeper drops <league>                  # who to drop, safest first
 sleeper survival <league>               # elimination leagues: distance to the cut
 sleeper digest <league>                 # all of the above, one weekly report
+sleeper byes <league> --weeks 4         # upcoming byes and hollow slots
+sleeper accuracy <league> --week 3      # how good the projections were
 ```
 
 The in-season commands rank by what a player does to your own starting lineup,
@@ -124,9 +126,9 @@ The same quarterback, with the same projection, in two leagues:
 - ADP is national and a weak prior in a small friends league.
 - Projection quality is the ceiling. This is a scarcity and roster-need engine,
   not an oracle.
-- The rest-of-season horizon scales the season projection by the weeks
-  remaining and does not subtract a bye that is still ahead. `sleeper byes`
-  reports byes separately.
+- The rest-of-season horizon scales the season projection by the share of a
+  team's games that remain, so it accounts for byes, but it assumes a player's
+  points are spread evenly across his games.
 
 ## Tests
 

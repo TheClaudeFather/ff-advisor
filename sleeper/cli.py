@@ -8,9 +8,9 @@ import time
 
 from . import (api, cache, config, draft as draft_mod, env,
                league as league_mod, match, players, projections, render,
-               season)
+               scoring, season)
 from .advice import digest as digest_mod
-from .advice import inseason, lineup_advice, planner, survival, wire
+from .advice import accuracy, inseason, lineup_advice, planner, survival, wire
 from .advice import board as board_mod
 from .advice import draft_advice
 
@@ -526,6 +526,67 @@ def cmd_byes(args, cfg):
     print("lands, not during it.")
 
 
+def cmd_accuracy(args, cfg):
+    """Grade a week's projections against what actually happened."""
+    lg = _lg(args, cfg)
+    _advice_week, live = _weeks(args, cfg)
+    week = args.week or max(1, live - 1)   # default: the week just played
+
+    path = env.home() / "snapshots" / f"{lg.league_id}_week{week}.json"
+    if not path.exists():
+        raise SystemExit(
+            f"no snapshot of week {week} for {lg.name}.\n"
+            "  Snapshots are written by `sleeper digest`, before the week is\n"
+            "  played. Nothing else preserves what was projected at the time.")
+    saved = jsonlib.loads(path.read_text())
+
+    db = players.load(offline=args.offline)
+    pos_of = {p: d.get("position") for p, d in db.items()}
+    try:
+        records = api.stats_week(lg.season, week, offline=args.offline)
+    except RuntimeError as e:
+        raise SystemExit(str(e))
+
+    actual = {}
+    for r in records:
+        pid = r.get("player_id")
+        pos = (r.get("player") or {}).get("position") or pos_of.get(pid)
+        if pid and pos:
+            actual[pid] = scoring.score_player(r.get("stats") or {},
+                                               lg.scoring, pos)
+
+    out = accuracy.grade(saved["points"], actual, pos_of, week=week)
+    if args.json:
+        return {"league": lg.name, **out, "worst": out["worst"][: args.top]}
+
+    if not out["played"]:
+        raise SystemExit(
+            f"week {week} has not been played: every player scored zero.\n"
+            "  Sleeper publishes a stats feed for a future week with all its\n"
+            "  values at zero, so grading it would measure nothing.")
+
+    def name(pid):
+        return (db.get(pid) or {}).get("name", pid)
+
+    print(render.banner())
+    o = out["overall"]
+    print(f"{lg.name}  |  week {week}  |  {o['n']} rostered players graded\n")
+    ran = "projections ran high" if o["bias"] > 0 else "projections ran low"
+    print(f"  average miss {o['mae']}   bias {o['bias']:+} ({ran})\n")
+    print(render.table(
+        [[pos, v["n"], v["mae"], f"{v['bias']:+}"]
+         for pos, v in out["by_pos"].items()],
+        ["pos", "n", "avg miss", "bias"]))
+    print("\nbiggest misses:")
+    for r in out["worst"][: args.top]:
+        print(f"  {name(r['player_id'])[:24]:<24} {r['pos']:<4} "
+              f"projected {r['projected']:>6}  actual {r['actual']:>6}  "
+              f"{r['error']:+}")
+    if out["n_no_actual"]:
+        print(f"\n! {out['n_no_actual']} players have no result in the stats "
+              "feed and were graded as zero.")
+
+
 def cmd_board(args, cfg):
     lg = _lg(args, cfg)
     rows, meta = board_mod.build(lg, offline=args.offline)
@@ -698,6 +759,10 @@ def main(argv=None):
     s.add_argument("league", nargs="?")
     s.add_argument("--week", type=int); s.add_argument("--weeks", type=int, default=4)
     s.add_argument("--roster-id", type=int, dest="roster_id")
+    s = sub.add_parser("accuracy", parents=[common])
+    s.add_argument("league", nargs="?")
+    s.add_argument("--week", type=int)
+    s.add_argument("--top", type=int, default=8)
     s = sub.add_parser("board", parents=[common])
     s.add_argument("league", nargs="?"); s.add_argument("--pos")
     s.add_argument("--top", type=int, default=40)
@@ -719,7 +784,7 @@ def main(argv=None):
     cfg = config.load()
     fn = {"leagues": cmd_leagues, "env": cmd_env, "lineup": cmd_lineup,
           "waivers": cmd_waivers, "drops": cmd_drops, "survival": cmd_survival,
-          "digest": cmd_digest, "byes": cmd_byes,
+          "digest": cmd_digest, "byes": cmd_byes, "accuracy": cmd_accuracy,
           "show": cmd_league_show, "refresh": cmd_refresh,
           "player": cmd_player, "board": cmd_board, "draft": cmd_draft,
           "live": cmd_live}[args.cmd]
