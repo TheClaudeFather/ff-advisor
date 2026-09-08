@@ -5,7 +5,7 @@ projection feed lists every team in every week, so a bye cannot be found by a
 team going missing. What does identify it is the whole team projecting nothing:
 in week 6 of 2026 exactly three teams total under a point.
 """
-from sleeper.advice.planner import outlook, teams_on_bye
+from sleeper.advice.planner import bye_weeks, outlook
 from sleeper.league import League, Roster
 
 PPR = {"rec": 1.0, "rec_yd": 0.1, "rec_td": 6.0}
@@ -24,26 +24,28 @@ def _roster(players, slots=None):
                   slots=list(slots), reserve=[], taxi=[])
 
 
-def _records(team_points):
-    """One projection record per team, carrying that team's whole output."""
-    return [{"player_id": f"p{t}", "player": {"team": t, "position": "RB"},
-             "stats": {"pts_ppr": pts}} for t, pts in team_points.items()]
+GAMES = [
+    {"week": 1, "home": "CAR", "away": "CHI"},
+    {"week": 1, "home": "DET", "away": "CIN"},
+    {"week": 2, "home": "CHI", "away": "DET"},
+]
 
 
-def test_a_team_projecting_nothing_is_on_bye():
-    records = _records({"DET": 0.0, "CIN": 0.0, "SEA": 108.7, "CLE": 83.6})
-    assert teams_on_bye(records) == {"DET", "CIN"}
+def test_a_team_with_no_game_that_week_is_on_bye():
+    assert bye_weeks(GAMES)[2] == {"CAR", "CIN"}
 
 
-def test_a_team_with_one_stray_projection_is_still_on_bye():
-    """A player who changed teams mid-season leaves a trace on his old one."""
-    records = _records({"MIN": 0.2, "SEA": 108.7})
-    assert teams_on_bye(records) == {"MIN"}
+def test_nobody_is_on_bye_when_everyone_plays():
+    assert bye_weeks(GAMES)[1] == set()
 
 
-def test_nobody_is_on_bye_in_week_one():
-    records = _records({"DET": 90.0, "CIN": 85.0})
-    assert teams_on_bye(records) == set()
+def test_every_week_in_the_schedule_is_covered():
+    assert sorted(bye_weeks(GAMES)) == [1, 2]
+
+
+def test_a_missing_side_of_a_game_does_not_invent_a_team():
+    games = GAMES + [{"week": 2, "home": "SEA", "away": None}]
+    assert None not in bye_weeks(games)[2]
 
 
 # --- the outlook -------------------------------------------------------------

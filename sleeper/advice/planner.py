@@ -1,31 +1,30 @@
 """Looking ahead: the weeks where a slot has nobody to fill it.
 
-Byes have to be derived. Sleeper's player payload carries no usable bye_week,
-and the weekly projection feed lists every team in every week, so a bye cannot
-be found by a team going missing from the feed. What does identify one is the
-whole team projecting nothing: in week 6 of 2026 exactly three teams total
-under a point while the rest total 80 to 110.
+Byes come from the schedule: a team with no game in a week is not playing.
+Sleeper's player payload carries no usable bye_week, but the schedule endpoint
+gives the whole season in 27KB and answers it exactly.
+
+An earlier version inferred byes from the projection feed instead, treating a
+team that projected under a point as idle. That was wrong: for week 6 of 2026
+it found Cincinnati, Detroit and Minnesota but missed Miami, whose players
+still carried projections while the team was on bye.
 """
 from __future__ import annotations
 
-from collections import defaultdict
-
 from .. import lineup as lineup_mod
 
-# A whole team's projected points below this means nobody is playing. It is not
-# zero because a player who changed teams mid-season leaves a trace on his old
-# one: Minnesota totalled 0.2 in its 2026 bye week.
-BYE_THRESHOLD = 1.0
 
-
-def teams_on_bye(records, *, threshold=BYE_THRESHOLD) -> set:
-    """Which teams are not playing, from one week's projection feed."""
-    totals = defaultdict(float)
-    for r in records:
-        team = (r.get("player") or {}).get("team")
-        if team:
-            totals[team] += (r.get("stats") or {}).get("pts_ppr") or 0.0
-    return {team for team, pts in totals.items() if pts < threshold}
+def bye_weeks(games) -> dict:
+    """{week: {teams not playing}} from the season schedule."""
+    playing, teams = {}, set()
+    for g in games:
+        week = g.get("week")
+        if week is None:
+            continue
+        sides = {g.get("home"), g.get("away")} - {None}
+        playing.setdefault(week, set()).update(sides)
+        teams |= sides
+    return {week: teams - active for week, active in playing.items()}
 
 
 def outlook(lg, roster, weekly_points: dict, pos_of: dict, byes: dict,

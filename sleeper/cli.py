@@ -484,18 +484,16 @@ def cmd_byes(args, cfg):
     pos_of = {p: d.get("position") for p, d in db.items()}
     team_of = {p: d.get("team") for p, d in db.items()}
 
-    weekly, byes = {}, {}
+    byes = planner.bye_weeks(api.schedule(lg.season, offline=args.offline))
+    weekly = {}
     last = min(season.LAST_WEEK, week + args.weeks - 1)
     for wk in range(week, last + 1):
         try:
             pts, _opp = projections.points(lg, f"week:{wk}", current_week=live,
                                            offline=args.offline)
-            records = projections.raw(lg.season, f"week:{wk}",
-                                      current_week=live, offline=args.offline)
         except RuntimeError:
             continue  # that week is not published or not cached
         weekly[wk] = pts
-        byes[wk] = planner.teams_on_bye(records)
 
     if not weekly:
         raise SystemExit("no weekly projections available for those weeks.")
