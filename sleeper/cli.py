@@ -530,13 +530,17 @@ def cmd_byes(args, cfg):
     print("lands, not during it.")
 
 
-def _grade_week(lg, week, pos_of, *, offline=False):
+def _grade_week(lg, week, pos_of, *, offline=False, refresh=False,
+                live_week=None):
     """One week graded, or None when there is no snapshot of it."""
     path = env.home() / "snapshots" / f"{lg.league_id}_week{week}.json"
     if not path.exists():
         return None
     saved = jsonlib.loads(path.read_text())
-    records = api.stats_week(lg.season, week, offline=offline)
+    # Only a week that is over is safe to keep forever.
+    finished = live_week is not None and week < live_week
+    records = api.stats_week(lg.season, week, completed=finished,
+                             offline=offline, refresh=refresh)
 
     actual = {}
     for r in records:
@@ -561,7 +565,8 @@ def cmd_accuracy(args, cfg):
         weeks = []
         for wk in range(1, args.through + 1):
             try:
-                graded = _grade_week(lg, wk, pos_of, offline=args.offline)
+                graded = _grade_week(lg, wk, pos_of, offline=args.offline,
+                                     refresh=args.refresh, live_week=live)
             except RuntimeError:
                 continue
             if graded:
@@ -595,7 +600,8 @@ def cmd_accuracy(args, cfg):
 
     week = args.week or max(1, live - 1)   # default: the week just played
     try:
-        out = _grade_week(lg, week, pos_of, offline=args.offline)
+        out = _grade_week(lg, week, pos_of, offline=args.offline,
+                          refresh=args.refresh, live_week=live)
     except RuntimeError as e:
         raise SystemExit(str(e))
     if out is None:
