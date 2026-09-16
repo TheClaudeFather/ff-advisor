@@ -119,10 +119,17 @@ def projections_week(season, week, *, completed=False, **kw):
                           ttl, **kw)
 
 
-def stats_week(season, week, **kw):
+def stats_week(season, week, *, completed=False, **kw):
+    """Results for a week. Immutable only once the week has been played.
+
+    This cached forever unconditionally, so fetching a week before kickoff
+    stored a feed of zeros permanently and every later grade of that week read
+    them back and called it unplayed. The default is now the safe one.
+    """
+    ttl = cache.FOREVER if completed else 6 * HOUR
     return cache.get_json("stats", f"{season}_{week}",
                           f"{BASE}/stats/nfl/{season}/{week}?season_type=regular&{_POS_Q}",
-                          cache.FOREVER, **kw)
+                          ttl, **kw)
 
 
 def trending(kind="add", hours=24, limit=50, **kw):
